@@ -1,0 +1,7 @@
+#!/bin/bash
+SPEEDTEST_CSV_FILE=$1
+IPERF_XML_FILE=$2
+IPERF_SERVER=$3
+
+./collect-speedtest.sh $SPEEDTEST_CSV_FILE
+./collect-iperf.sh $IPERF_XML_FILE $IPERF_SERVER
