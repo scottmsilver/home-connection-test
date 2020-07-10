@@ -16,6 +16,6 @@ do
     ./collect-data.sh $SPEEDTEST_CSV_PATH $IPERF_XML_PATH $IPERF_SERVER
     echo "Graphing data"
     ./graph-data.sh $OUTPUT_DIRECTORY $SPEEDTEST_CSV_PATH $IPERF_XML_PATH
-    echo "Sleeping'
+    echo "Sleeping"
     sleep 300
 done
