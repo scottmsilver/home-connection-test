@@ -6,8 +6,7 @@ import speedtest
 from influxdb import InfluxDBClient
 import time
 import argparse
-
-
+import socket
 
 # Add row, a list of column values, to end of csvFile
 def appendToCsv(csvFile, row):
@@ -15,8 +14,9 @@ def appendToCsv(csvFile, row):
      writer = csv.writer(f)
      writer.writerow(row)
 
+# Class used to test the network and write the results to a Csv file and InfluxDb
 class NetworkTester:
-    def __init__(self, influxDbClient, iperfCsvFile, iperfServer, iperfServerPort, iperfServerUploadMbits, iperfServerUploadDuration, speedtestCsvFile):
+    def __init__(self, influxDbClient, iperfCsvFile, iperfServer, iperfServerPort, iperfServerUploadMbits, iperfServerUploadDuration, speedtestCsvFile, server):
         self.influxDbClient = influxDbClient
         self.iperfCsvFile = iperfCsvFile
         self.iperfServer = iperfServer
@@ -24,11 +24,16 @@ class NetworkTester:
         self.iperfServerUploadMbits = iperfServerUploadMbits
         self.iperfServerUploadDuration = iperfServerUploadDuration
         self.speedtestCsvFile = speedtestCsvFile
+        self.server = server
 
+    # Write a measurement to InfluxDB
     def simpleWriteToInflux(self, timestamp, measurementName, values):
       jsonBody = [ {
         "measurement": measurementName,
         "TIMESTAMP": timestamp,
+        "tags": {
+            "SERVER" : self.server
+        },
         "fields": values
       } ]
 
@@ -114,11 +119,12 @@ parser.set_defaults(speedtestFeature = True)
 parser.add_argument('--iperf', dest = 'iperfFeature', action='store_true')
 parser.add_argument('--no-iperf', dest = 'iperfFeature', action='store_false')
 parser.set_defaults(iperfFeature = True)
+parser.add_argument('--server', default = socket.gethostname(), help='Name of server doing measurement')
 
 args = parser.parse_args()
 client = InfluxDBClient(args.influx_db_hostname, args.influx_db_port, args.influx_db_username, args.influx_db_password, args.influx_db_database_name)
+tester = NetworkTester(client, args.iperf_csv_file, args.iperf_server, args.iperf_server_port, args.iperf_upload_mbits, args.iperf_upload_duration, args.speedtest_csv_file, args.server)
 
-tester = NetworkTester(client, args.iperf_csv_file, args.iperf_server, args.iperf_server_port, args.iperf_upload_mbits, args.iperf_upload_duration, args.speedtest_csv_file)
 while True:
    if args.speedtestFeature:
      try:
