@@ -1,20 +1,33 @@
 
 Ensure you have python3 installed
 
+```
 pi@raspberrypi:~ $ python3 -V
 Python 3.7.3
+```
 
 It is ok to have python2 installed (typically it's the default python)
 
 Ensure / Install pip3
 
+```
 pi@raspberrypi:~ $ pip3 -V
 pip 18.1 from /usr/lib/python3/dist-packages/pip (python 3.7)
+```
 
 or
 
-debian: sudo apt-get install python3-pip
-others: https://pip.pypa.io/en/stable/installing/
+debian: 
+
+```
+sudo apt-get install python3-pip
+```
+
+others: 
+
+```
+https://pip.pypa.io/en/stable/installing/
+```
 
 Install iperf
 
