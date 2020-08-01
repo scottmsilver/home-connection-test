@@ -77,7 +77,7 @@ Be sure to start it running.
 
 Test influx
 
-'''
+```
 influx
 > show databases
 name
@@ -93,24 +93,24 @@ name
 _internal
 example
 y
-'''
+```
 
 Now start collecting some data
 
-'''
+```
 python3 collect-data.py --iperf-server 35.224.53.38 --iperf-server-port 6201
-'''
+```
 
-'''
+```
 running speedtest
 running iperftest
 sleeping for 300 seconds
-'''
+```
 
 Now verify there is data 
 
-'''
-$influx
+```
+$ influx
 
 > use example
 Using database example
@@ -139,7 +139,7 @@ time                DOWNLOAD_BPS       SERVER                STATUS UPLOAD_BPS
 1596317865717493000 108213226.30501562 Scotts-Mac-mini.local OK     12293346.949994646
 1596318192804164000 123236441.30121537 Scotts-Mac-mini.local OK     12232978.96974388
 1596318520005486000 116783529.13795431 Scotts-Mac-mini.local OK     29744266.07239603
-'''
+```
 
 Now lets show some pretty graphs.
 
