@@ -36,7 +36,9 @@ MacOS: brew install iperf
 
 Install iperf for python
 
+```
 pip install iperf3
+```
 
 Install speedtest
 
@@ -45,7 +47,9 @@ Debian: sudo apt-get install speedtest-cli.
 
 Install speedtest python
 
+```
 pip install speedtest-cli
+```
 
 Install influxdb 
 
@@ -57,8 +61,10 @@ Debian: Debian release https://grafana.com/docs/grafana/latest/installation/debi
 Mac: https://grafana.com/docs/grafana/latest/installation/mac/
 Use brew instructions here
 
+```
 brew install grafana
 brew services start grafana
+```
 
 Configure Grafana
 
