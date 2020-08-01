@@ -1,3 +1,8 @@
+For debian
+
+```
+sudo apt-get update
+```
 
 Ensure you have python3 installed
 
@@ -31,8 +36,13 @@ https://pip.pypa.io/en/stable/installing/
 
 Install iperf
 
-debian: sudo apt-get install iperf3
-MacOS: brew install iperf
+debian: 
+
+sudo apt-get install iperf3
+
+MacOS: 
+
+brew install iperf
 
 Install iperf for python
 
@@ -42,8 +52,17 @@ pip install iperf3
 
 Install speedtest
 
-MacOS: brew install speedtest-cli
-Debian: sudo apt-get install speedtest-cli.
+MacOS: 
+
+```
+brew install speedtest-cli
+```
+
+Debian: 
+
+```
+sudo apt-get install speedtest-cli
+```
 
 Install speedtest python
 
@@ -55,7 +74,7 @@ Install influxdb
 
 https://docs.influxdata.com/influxdb/v1.8/introduction/install/
 
-Install grafana
+Install grafana the *OSS* (open source software version)
 
 Debian: Debian release https://grafana.com/docs/grafana/latest/installation/debian/
 Mac: https://grafana.com/docs/grafana/latest/installation/mac/
