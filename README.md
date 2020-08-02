@@ -171,3 +171,9 @@ Import dashboard (http://localhost:3000/dashboards)
 3. Find the file "performance.json" 
 
 
+Notes on iperf3
+
+The stuff in repositories doesn't support auth.
+So, important to build it yourself or downlaod and install.
+If you build yourself, be sure to install openssl-dev first
+sudo apt-get install libssl-dev
