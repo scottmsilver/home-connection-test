@@ -62,11 +62,13 @@ class NetworkTester:
     # Format:
     #   Time, OK|FAIL, Average_Megabits, PacketLossPercent
     def runiPerfTest(self):
-      row = [datetime.datetime.now(datetime.timezone.utc), "FAIL", 0.0, 0.0]
+      row = [datetime.datetime.now(datetime.timezone.utc), "FAIL", 0.0, 100.0]
       try:
         result = self.calliPerf()
         if not result.error:
           row = [self.parseiPerfDate(result.time), "OK", result.Mbps, result.lost_percent]
+        else:
+          print("iperf failed: " + result.error)
       finally:
         try:
           self.simpleWriteToInflux(row[0], "upload_packet_loss", { "STATUS": row[1], "UPLOAD_MBPS": row[2], "PACKET_LOST_PERCENT": float(row[3])})
@@ -105,9 +107,9 @@ parser.add_argument('--iperf-csv-file', default='iperf.csv', help = 'Name of CSV
 parser.add_argument('--iperf-server', default='localhost', help = 'iperf3 server to use')
 parser.add_argument('--iperf-server-port', default=6201, help = 'iperf3 server port to use')
 parser.add_argument('--speedtest-csv-file', default='speedtest.csv', help = 'Name of CSV file for speedtest test')
-parser.add_argument('--iperf-upload-mbits', default=1, help = 'Megabits to upload in the UDP test')
-parser.add_argument('--iperf-upload-duration', default=5, help = 'Seconds to run test for')
-parser.add_argument('--pause-between-tests', default=300, help = 'Number of seconds to wait between tests')
+parser.add_argument('--iperf-upload-mbits', default=1, type=int, help = 'Megabits to upload in the UDP test')
+parser.add_argument('--iperf-upload-duration', default=5, type=int, help = 'Seconds to run test for')
+parser.add_argument('--pause-between-tests', default=300, type=int, help = 'Number of seconds to wait between tests')
 parser.add_argument('--influx-db-hostname', default='localhost', help = 'InfluxDB hostname')
 parser.add_argument('--influx-db-port', default=8086, help = 'InfluxDB port')
 parser.add_argument('--influx-db-username', default='root', help = 'InfluxDB username')
