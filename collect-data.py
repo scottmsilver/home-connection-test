@@ -7,6 +7,7 @@ from influxdb import InfluxDBClient
 import time
 import argparse
 import socket
+import re
 
 # Add row, a list of column values, to end of csvFile
 def appendToCsv(csvFile, row):
@@ -50,6 +51,7 @@ class NetworkTester:
       client.duration = self.iperfServerUploadDuration
       # iPerf tends to freak out it above this.
       client.blksize = 1408
+      client.server_output = True
 
       return client.run()
 
@@ -66,12 +68,16 @@ class NetworkTester:
       try:
         result = self.calliPerf()
         if not result.error:
-          row = [self.parseiPerfDate(result.time), "OK", result.Mbps, result.lost_percent]
+          p = re.compile('Accepted connection from (\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})')
+          m = p.search(result.server_output_text)
+          connection_ip_address = m.group(1)
+          row = [self.parseiPerfDate(result.time), "OK", result.Mbps, result.lost_percent, connection_ip_address]
+          print("success to %s" % connection_ip_address)
         else:
           print("iperf failed: " + result.error)
       finally:
         try:
-          self.simpleWriteToInflux(row[0], "upload_packet_loss", { "STATUS": row[1], "UPLOAD_MBPS": row[2], "PACKET_LOST_PERCENT": float(row[3])})
+          self.simpleWriteToInflux(row[0], "upload_packet_loss", { "STATUS": row[1], "UPLOAD_MBPS": row[2], "PACKET_LOST_PERCENT": float(row[3]), "LOCAL_HOST" : row[4] })
         finally:
           appendToCsv(self.iperfCsvFile, row)
 
@@ -94,10 +100,10 @@ class NetworkTester:
         s.upload()
         results = s.results.dict()
 
-        row = [self.parseSpeedtestDate(results['timestamp']), "OK", results['download'], results['upload']]
+        row = [self.parseSpeedtestDate(results['timestamp']), "OK", results['download'], results['upload'], results['client']['ip']]
       finally:
         try:
-          self.simpleWriteToInflux(row[0], "speedtest", { "STATUS": row[1], "DOWNLOAD_BPS": row[2], "UPLOAD_BPS": row[3]})
+          self.simpleWriteToInflux(row[0], "speedtest", { "STATUS": row[1], "DOWNLOAD_BPS": row[2], "UPLOAD_BPS": row[3], "LOCAL_HOST" : row[4]})
         finally:
           appendToCsv(self.speedtestCsvFile, row)
 
@@ -120,14 +126,17 @@ parser.add_argument('--no-speedtest', dest = 'speedtestFeature', action='store_f
 parser.set_defaults(speedtestFeature = True)
 parser.add_argument('--iperf', dest = 'iperfFeature', action='store_true')
 parser.add_argument('--no-iperf', dest = 'iperfFeature', action='store_false')
+parser.add_argument('--no-run-continuously', dest = 'runContinuously', action='store_false')
+parser.add_argument('--run-continuously', dest = 'runContinuously', action='store_true')
 parser.set_defaults(iperfFeature = True)
 parser.add_argument('--server', default = socket.gethostname(), help='Name of server doing measurement')
 
 args = parser.parse_args()
 client = InfluxDBClient(args.influx_db_hostname, args.influx_db_port, args.influx_db_username, args.influx_db_password, args.influx_db_database_name)
 tester = NetworkTester(client, args.iperf_csv_file, args.iperf_server, args.iperf_server_port, args.iperf_upload_mbits, args.iperf_upload_duration, args.speedtest_csv_file, args.server)
+continueRunning = True
 
-while True:
+while continueRunning:
    if args.speedtestFeature:
      try:
        print("running speedtest");
@@ -140,5 +149,8 @@ while True:
          tester.runiPerfTest()
        except Exception as e:
          print(e)
-   print("sleeping for %d seconds" % args.pause_between_tests)
-   time.sleep(args.pause_between_tests)
+   if args.runContinuously:
+     print("sleeping for %d seconds" % args.pause_between_tests)
+     time.sleep(args.pause_between_tests)
+   else:
+     continueRunning = False
