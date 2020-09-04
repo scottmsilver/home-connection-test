@@ -1,1 +1,0 @@
-./iperf3 -s -p 6202  --authorized-users-path /home/scottmsilver/iperfusers     --rsa-private-key-path ~/iperf/private_not_protected.pem

@@ -8,6 +8,7 @@ import time
 import argparse
 import socket
 import re
+import base64
 
 # Add row, a list of column values, to end of csvFile
 def appendToCsv(csvFile, row):
@@ -15,9 +16,14 @@ def appendToCsv(csvFile, row):
      writer = csv.writer(f)
      writer.writerow(row)
 
+# Return the contents of a PEM file B64 encoded
+def getKeyAsBase64(keyFile):
+    with open(keyFile, 'rb') as file:
+        return base64.b64encode(file.read()).decode("ascii")
+
 # Class used to test the network and write the results to a Csv file and InfluxDb
 class NetworkTester:
-    def __init__(self, influxDbClient, iperfCsvFile, iperfServer, iperfServerPort, iperfServerUploadMbits, iperfServerUploadDuration, speedtestCsvFile, server):
+    def __init__(self, influxDbClient, iperfCsvFile, iperfServer, iperfServerPort, iperfServerUploadMbits, iperfServerUploadDuration, speedtestCsvFile, server, iperfUsername, iperfPassword, iperfPublicKeyFile):
         self.influxDbClient = influxDbClient
         self.iperfCsvFile = iperfCsvFile
         self.iperfServer = iperfServer
@@ -26,21 +32,25 @@ class NetworkTester:
         self.iperfServerUploadDuration = iperfServerUploadDuration
         self.speedtestCsvFile = speedtestCsvFile
         self.server = server
+        self.iperfPassword = iperfPassword
+        self.iperfUsername = iperfUsername
+        self.iperfPublicKeyFile = iperfPublicKeyFile
 
     # Write a measurement to InfluxDB
-    def simpleWriteToInflux(self, timestamp, measurementName, values):
+    def simpleWriteToInflux(self, timestamp, measurementName, localHost, values):
       jsonBody = [ {
         "measurement": measurementName,
         "TIMESTAMP": timestamp,
         "tags": {
-            "SERVER" : self.server
+            "SERVER" : self.server,
+            "LOCAL_HOST" : localHost
         },
         "fields": values
       } ]
 
       self.influxDbClient.write_points(jsonBody)
 
-    # Call iPerf to do a 1Mbit UDP stream for 5 seconds or 625K
+    # Make an iPerf UDP connection of the desired size and duration.
     # Return the iPerf result object.
     def calliPerf(self):
       client = iperf3.Client(verbose=False)
@@ -49,8 +59,16 @@ class NetworkTester:
       client.protocol = 'udp'
       client.bandwidth = self.iperfServerUploadMbits * 1000 * 1000
       client.duration = self.iperfServerUploadDuration
+
+      if self.iperfUsername and self.iperfPassword and self.iperfPublicKeyFile:
+          client.username = self.iperfUsername
+          client.password = self.iperfPassword
+          client.rsa_pubkey = getKeyAsBase64(self.iperfPublicKeyFile)
+
       # iPerf tends to freak out it above this.
       client.blksize = 1408
+
+      # We'll use this to figure out what IP we actually connected from.
       client.server_output = True
 
       return client.run()
@@ -64,10 +82,14 @@ class NetworkTester:
     # Format:
     #   Time, OK|FAIL, Average_Megabits, PacketLossPercent
     def runiPerfTest(self):
-      row = [datetime.datetime.now(datetime.timezone.utc), "FAIL", 0.0, 100.0]
+      # row[4] is the host that the server things is requesting things
+      row = [datetime.datetime.now(datetime.timezone.utc), "FAIL", 0.0, 100.0, "0.0.0.0"]
       try:
         result = self.calliPerf()
         if not result.error:
+          # The server output contains where the server accepted a connection from.
+          # In some setups the client may exit through multiple IP addresses so we want to record
+          # the actual public egress / ingress point from the client.
           p = re.compile('Accepted connection from (\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})')
           m = p.search(result.server_output_text)
           connection_ip_address = m.group(1)
@@ -77,7 +99,7 @@ class NetworkTester:
           print("iperf failed: " + result.error)
       finally:
         try:
-          self.simpleWriteToInflux(row[0], "upload_packet_loss", { "STATUS": row[1], "UPLOAD_MBPS": row[2], "PACKET_LOST_PERCENT": float(row[3]), "LOCAL_HOST" : row[4] })
+          self.simpleWriteToInflux(row[0], "upload_packet_loss", row[4], { "STATUS": row[1], "UPLOAD_MBPS": row[2], "PACKET_LOST_PERCENT": float(row[3]) })
         finally:
           appendToCsv(self.iperfCsvFile, row)
 
@@ -90,7 +112,7 @@ class NetworkTester:
     # Time, OK|FAIL, Download Speed Bit/s, Upload Speed Bit/S
     def runSpeedtestTest(self):
       # Presume we will fail.
-      row = [datetime.datetime.now(datetime.timezone.utc), "FAIL", 0.0, 0.0]
+      row = [datetime.datetime.now(datetime.timezone.utc), "FAIL", 0.0, 0.0, "0.0.0.0"]
 
       try:
         s = speedtest.Speedtest()
@@ -103,7 +125,7 @@ class NetworkTester:
         row = [self.parseSpeedtestDate(results['timestamp']), "OK", results['download'], results['upload'], results['client']['ip']]
       finally:
         try:
-          self.simpleWriteToInflux(row[0], "speedtest", { "STATUS": row[1], "DOWNLOAD_BPS": row[2], "UPLOAD_BPS": row[3], "LOCAL_HOST" : row[4]})
+          self.simpleWriteToInflux(row[0], "speedtest", row[4], { "STATUS": row[1], "DOWNLOAD_BPS": row[2], "UPLOAD_BPS": row[3] })
         finally:
           appendToCsv(self.speedtestCsvFile, row)
 
@@ -111,9 +133,12 @@ class NetworkTester:
 parser = argparse.ArgumentParser(description='Collect performance data.')
 parser.add_argument('--iperf-csv-file', default='iperf.csv', help = 'Name of CSV file for iperf test')
 parser.add_argument('--iperf-server', default='localhost', help = 'iperf3 server to use')
-parser.add_argument('--iperf-server-port', default=6201, help = 'iperf3 server port to use')
+parser.add_argument('--iperf-username', default=None, help = 'iperf3 user name for authentication')
+parser.add_argument('--iperf-password', default=None, help = 'iperf3 password for authentiation')
+parser.add_argument('--iperf-public-key-file', default=None, help = 'iperf3 public key pem used to encrypt credentials to server')
 parser.add_argument('--speedtest-csv-file', default='speedtest.csv', help = 'Name of CSV file for speedtest test')
 parser.add_argument('--iperf-upload-mbits', default=1, type=int, help = 'Megabits to upload in the UDP test')
+parser.add_argument('--iperf-server-port', default=5201, type=int, help = 'port of iperf3 server to which we should connect.')
 parser.add_argument('--iperf-upload-duration', default=5, type=int, help = 'Seconds to run test for')
 parser.add_argument('--pause-between-tests', default=300, type=int, help = 'Number of seconds to wait between tests')
 parser.add_argument('--influx-db-hostname', default='localhost', help = 'InfluxDB hostname')
@@ -133,8 +158,27 @@ parser.add_argument('--server', default = socket.gethostname(), help='Name of se
 
 args = parser.parse_args()
 client = InfluxDBClient(args.influx_db_hostname, args.influx_db_port, args.influx_db_username, args.influx_db_password, args.influx_db_database_name)
-tester = NetworkTester(client, args.iperf_csv_file, args.iperf_server, args.iperf_server_port, args.iperf_upload_mbits, args.iperf_upload_duration, args.speedtest_csv_file, args.server)
+tester = NetworkTester(client, args.iperf_csv_file, args.iperf_server, args.iperf_server_port, args.iperf_upload_mbits, args.iperf_upload_duration, args.speedtest_csv_file, args.server, args.iperf_username, args.iperf_password, args.iperf_public_key_file)
 continueRunning = True
+
+from threading import Timer
+import time
+
+
+class ResettableTimer(object):
+    def __init__(self, interval, function):
+        self.interval = interval
+        self.function = function
+        self.timer = Timer(self.interval, self.function)
+
+    def run(self):
+        self.timer.start()
+
+    def reset(self):
+        self.timer.cancel()
+        self.timer = Timer(self.interval, self.function)
+        self.timer.start()
+
 
 while continueRunning:
    if args.speedtestFeature:
