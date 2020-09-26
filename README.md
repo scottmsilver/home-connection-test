@@ -44,12 +44,19 @@ MacOS:
 
 brew install iperf
 
-Install iperf for python
+Install iperf for python that I modified to support authentication (alternatively you can just install the regular version:
+
+Regular Version of iperf3 for python
+
 
 ```
 pip install iperf3
 ```
 
+Modified version that supports authentication
+
+```
+g
 Install speedtest
 
 MacOS: 
