@@ -101,6 +101,12 @@ example
 y
 ```
 
+Install influx python adaptor
+
+```
+pip install influxdb
+```
+
 Now start collecting some data without authentication - send data by default to influxd running on localhost at 8086.
 Be sure to change server and server port since you can't use mine :-)
 
