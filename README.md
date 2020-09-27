@@ -28,11 +28,7 @@ debian:
 sudo apt-get install python3-pip
 ```
 
-others: 
-
-```
-https://pip.pypa.io/en/stable/installing/
-```
+others go here https://pip.pypa.io/en/stable/installing/
 
 Install iperf
 
@@ -53,7 +49,7 @@ pip install iperf3-0.1.11.tar.gz
 
 ```
 
-Or use the regular version
+Or use the regular version if you don't need authentication.
 
 ```
 pip install iperf3
@@ -105,16 +101,17 @@ example
 y
 ```
 
-Now start collecting some data without authentication - send data by default to influxd running on localhost at 8086
+Now start collecting some data without authentication - send data by default to influxd running on localhost at 8086.
+Be sure to change server and server port since you can't use mine :-)
 
 ```
 python3 collect-data.py --iperf-server 35.224.53.38 --iperf-server-port 6201
 ```
 
-Now start collecting data with authentication - be sure to change MYUSER and MYPASSWORD below.
+Now start collecting data with authentication - be sure to change MYUSER and MYPASSWORD and the server certificate.
 
 ```
---iperf-server 35.224.53.38 --iperf-server-port 6202 --iperf-public-key-file $DIR/public.pem --iperf-username=MYUSER --iperf-password=MYPASSWORD --speedtest-csv-file=peedtest.csv --iperf-csv-file=iperf.csv
+python3 --iperf-server 35.224.53.38 --iperf-server-port 6202 --iperf-public-key-file public.pem --iperf-username=MYUSER --iperf-password=MYPASSWORD --speedtest-csv-file=peedtest.csv --iperf-csv-file=iperf.csv
 ```
 
 ```
