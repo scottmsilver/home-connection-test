@@ -46,17 +46,20 @@ brew install iperf
 
 Install iperf for python that I modified to support authentication (alternatively you can just install the regular version:
 
-Regular Version of iperf3 for python
+Download https://github.com/scottmsilver/home-connection-test/raw/master/iperf3-0.1.11.tar.gz
 
+```
+pip install iperf3-0.1.11.tar.gz
+
+```
+
+Or use the regular version
 
 ```
 pip install iperf3
 ```
 
-Modified version that supports authentication
 
-```
-g
 Install speedtest
 
 MacOS: 
@@ -80,7 +83,7 @@ pip install speedtest-cli
 Install influxdb 
 
 https://docs.influxdata.com/influxdb/v1.8/introduction/install/
-Be sure to start it running.
+Be sure to start the daemon running it running.
 
 Test influx
 
@@ -102,10 +105,16 @@ example
 y
 ```
 
-Now start collecting some data
+Now start collecting some data without authentication - send data by default to influxd running on localhost at 8086
 
 ```
 python3 collect-data.py --iperf-server 35.224.53.38 --iperf-server-port 6201
+```
+
+Now start collecting data with authentication - be sure to change MYUSER and MYPASSWORD below.
+
+```
+--iperf-server 35.224.53.38 --iperf-server-port 6202 --iperf-public-key-file $DIR/public.pem --iperf-username=MYUSER --iperf-password=MYPASSWORD --speedtest-csv-file=peedtest.csv --iperf-csv-file=iperf.csv
 ```
 
 ```
