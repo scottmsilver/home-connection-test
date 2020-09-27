@@ -117,7 +117,7 @@ python3 collect-data.py --iperf-server 35.224.53.38 --iperf-server-port 6201
 Now start collecting data with authentication - be sure to change MYUSER and MYPASSWORD and the server certificate.
 
 ```
-python3 --iperf-server 35.224.53.38 --iperf-server-port 6202 --iperf-public-key-file public.pem --iperf-username=MYUSER --iperf-password=MYPASSWORD --speedtest-csv-file=peedtest.csv --iperf-csv-file=iperf.csv
+python3 collect-data.py --iperf-server 35.224.53.38 --iperf-server-port 6202 --iperf-public-key-file public.pem --iperf-username=MYUSER --iperf-password=MYPASSWORD --speedtest-csv-file=peedtest.csv --iperf-csv-file=iperf.csv
 ```
 
 ```
