@@ -1,3 +1,9 @@
+home connection test runs two kinds of connection tests and places the results in a csv and influx.
+
+The first test runs a typical tcp speedtest. 
+The second test uses iperf to run a udp test and record packet loss.
+The general idea of the second is to simulate what it takes to use google meet or zoom.
+
 For debian
 
 ```
