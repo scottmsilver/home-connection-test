@@ -161,25 +161,6 @@ client = InfluxDBClient(args.influx_db_hostname, args.influx_db_port, args.influ
 tester = NetworkTester(client, args.iperf_csv_file, args.iperf_server, args.iperf_server_port, args.iperf_upload_mbits, args.iperf_upload_duration, args.speedtest_csv_file, args.server, args.iperf_username, args.iperf_password, args.iperf_public_key_file)
 continueRunning = True
 
-from threading import Timer
-import time
-
-
-class ResettableTimer(object):
-    def __init__(self, interval, function):
-        self.interval = interval
-        self.function = function
-        self.timer = Timer(self.interval, self.function)
-
-    def run(self):
-        self.timer.start()
-
-    def reset(self):
-        self.timer.cancel()
-        self.timer = Timer(self.interval, self.function)
-        self.timer.start()
-
-
 while continueRunning:
    if args.speedtestFeature:
      try:
