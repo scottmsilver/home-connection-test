@@ -110,7 +110,7 @@ y
 Install influx python adaptor
 
 ```
-pip install influxdb
+pip3 install influxdb
 ```
 
 Now start collecting some data without authentication - send data by default to influxd running on localhost at 8086.
