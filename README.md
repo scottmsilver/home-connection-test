@@ -51,14 +51,14 @@ Install iperf for python that I modified to support authentication (alternativel
 Download https://github.com/scottmsilver/home-connection-test/raw/master/iperf3-0.1.11.tar.gz
 
 ```
-pip install iperf3-0.1.11.tar.gz
+pip3 install iperf3-0.1.11.tar.gz
 
 ```
 
 Or use the regular version if you don't need authentication.
 
 ```
-pip install iperf3
+pip3 install iperf3
 ```
 
 
@@ -79,7 +79,7 @@ sudo apt-get install speedtest-cli
 Install speedtest python
 
 ```
-pip install speedtest-cli
+pip3 install speedtest-cli
 ```
 
 Install influxdb 
