@@ -1,12 +1,12 @@
 # About
 
-home connection test runs two kinds of connection tests and places the results in a csv and influx.
+home-connection-test tests your connection so you can understand how your home internet connection performs over time. It's especially focused on upstream bandwidth that is critical for video conferencing. Its goal is to simulate how video conferencing works and also raw "speedtests" that people use to talk about their internet connection. In particular, video conferencing typically requires high quality UDP streams. When zoom or meet see (upstream or downstream) latency or packet loss via UDP to their servers their clients will start degrading what they receive or send. 
 
 # Overview
 
+The design is to run two tests continuously.
 The first test runs a typical tcp speedtest. 
 The second test uses iperf to run a udp test and record packet loss.
-The general idea of the second is to simulate what it takes to use google meet or zoom.
 
 # Installation
 
