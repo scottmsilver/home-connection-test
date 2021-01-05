@@ -1,6 +1,6 @@
 ![Image of dashboard](https://github.com/scottmsilver/home-connection-test/blob/master/dashboard_example.png)
 
-About
+# About
 
 home-connection-test tests your connection so you can understand how your home internet connection performs over time. It's especially focused on upstream bandwidth that is critical for video conferencing. Its goal is to simulate how video conferencing works and also raw "speedtests" that people use to talk about their internet connection. In particular, video conferencing typically requires high quality UDP streams. When zoom or meet see (upstream or downstream) latency or packet loss via UDP to their servers their clients will start degrading what they receive or send. 
 
