@@ -50,6 +50,15 @@ Install iperf for python that I modified to support authentication (alternativel
 
 Download https://github.com/scottmsilver/home-connection-test/raw/master/iperf3-0.1.11.tar.gz
 
+Check if iPerf installed supports authentication if you plan to use it and is version 3.8 or higher (notice "authentication" in the list below)
+
+```
+iperf3 --version
+
+iperf 3.9+ (cJSON 1.7.13)
+Linux measure-slc 5.4.0-59-generic #65-Ubuntu SMP Thu Dec 10 12:01:51 UTC 2020 x86_64
+Optional features available: CPU affinity setting, IPv6 flow label, TCP congestion algorithm setting, sendfile / zerocopy, socket pacing, authentication, bind to device
+
 ```
 pip3 install iperf3-0.1.11.tar.gz
 
@@ -201,4 +210,13 @@ Notes on iperf3
 The stuff in repositories doesn't support auth.
 So, important to build it yourself or downlaod and install.
 If you build yourself, be sure to install openssl-dev first
+
+To install and build iperf3:
+
+```
 sudo apt-get install libssl-dev
+git clone https://github.com/esnet/iperf
+cd iperf
+make
+sudo make install
+```
