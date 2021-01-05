@@ -202,11 +202,11 @@ Add Data Source (http://localhost:3000/datasources)
 
 Example query
 
-![Image of query](https://home-connection-test.github.com/query.png)
+![Image of query](https://github.com/scottmsilver/home-connection-test/query.png)
 
 Example dashboards
 
-![Image of dashboard](https://home-connection-test.github.com/dashboard_example.png)
+![Image of dashboard](https://github.com/scottmsilver/home-connection-test/dashboard_example.png)
 
 
 
