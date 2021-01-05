@@ -200,11 +200,14 @@ Add Data Source (http://localhost:3000/datasources)
 3. Database is "example"
 4. Click Test at bottom and it should work.
 
-Import dashboard (http://localhost:3000/dashboards)
+Example query
 
-1. Click Import
-2. Click From JSON
-3. Find the file "performance.json" 
+![Image of query](https://home-connection-test.github.com/query.png)
+
+Example dashboards
+
+![Image of dashboard](https://home-connection-test.github.com/dashboard_example.png)
+
 
 
 Notes on iperf3
