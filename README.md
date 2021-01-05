@@ -54,10 +54,12 @@ Check if iPerf installed supports authentication if you plan to use it and is ve
 
 ```
 iperf3 --version
-
+```
+```
 iperf 3.9+ (cJSON 1.7.13)
 Linux measure-slc 5.4.0-59-generic #65-Ubuntu SMP Thu Dec 10 12:01:51 UTC 2020 x86_64
 Optional features available: CPU affinity setting, IPv6 flow label, TCP congestion algorithm setting, sendfile / zerocopy, socket pacing, authentication, bind to device
+```
 
 ```
 pip3 install iperf3-0.1.11.tar.gz
