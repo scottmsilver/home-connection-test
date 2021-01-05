@@ -1,14 +1,14 @@
+# About
+
 home connection test runs two kinds of connection tests and places the results in a csv and influx.
+
+# Overview
 
 The first test runs a typical tcp speedtest. 
 The second test uses iperf to run a udp test and record packet loss.
 The general idea of the second is to simulate what it takes to use google meet or zoom.
 
-For debian
-
-```
-sudo apt-get update
-```
+# Installation
 
 Ensure you have python3 installed
 
@@ -17,9 +17,9 @@ pi@raspberrypi:~ $ python3 -V
 Python 3.7.3
 ```
 
-It is ok to have python2 installed (typically it's the default python)
+NB: it is ok to have python2 installed (typically it's the default python). I recommend using virtualenv, but don't assume you do.
 
-Ensure / Install pip3
+## Install pip3 (or make sure it's installed)
 
 ```
 pi@raspberrypi:~ $ pip3 -V
@@ -36,15 +36,19 @@ sudo apt-get install python3-pip
 
 others go here https://pip.pypa.io/en/stable/installing/
 
-Install iperf
+## Install iperf
 
 debian: 
 
+```
 sudo apt-get install iperf3
+```
 
 MacOS: 
 
+```
 brew install iperf
+```
 
 Install iperf for python that I modified to support authentication (alternatively you can just install the regular version:
 
@@ -73,7 +77,7 @@ pip3 install iperf3
 ```
 
 
-Install speedtest
+## Install speedtest-cli
 
 MacOS: 
 
@@ -87,13 +91,13 @@ Debian:
 sudo apt-get install speedtest-cli
 ```
 
-Install speedtest python
+## Install speedtest python
 
 ```
 pip3 install speedtest-cli
 ```
 
-Install influxdb 
+## Install influxdb 
 
 https://docs.influxdata.com/influxdb/v1.8/introduction/install/
 Be sure to start the daemon running it running.
@@ -118,7 +122,7 @@ example
 y
 ```
 
-Install influx python adaptor
+## Install influx python adaptor
 
 ```
 pip3 install influxdb
@@ -190,8 +194,7 @@ brew install grafana
 brew services start grafana
 ```
 
-Configure Grafana
-
+## Configure Grafana
 
 Add Data Source (http://localhost:3000/datasources)
 
@@ -209,8 +212,7 @@ Example dashboards
 ![Image of dashboard](https://github.com/scottmsilver/home-connection-test/blob/master/dashboard_example.png)
 
 
-
-Notes on iperf3
+## Notes on iperf3
 
 The stuff in repositories doesn't support auth.
 So, important to build it yourself or downlaod and install.
