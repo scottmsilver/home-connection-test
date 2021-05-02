@@ -6,9 +6,8 @@ home-connection-test tests your connection so you can understand how your home i
 
 # Overview
 
-The design is to run two tests continuously.
-The first test runs a typical tcp speedtest. 
-The second test uses iperf to run a udp test and record packet loss.
+This package provides two scripts which output telegraf line format for monitoring connectivity.
+
 
 # Installation
 
@@ -52,12 +51,6 @@ MacOS:
 brew install iperf
 ```
 
-Install iperf for python that I modified to support authentication (alternatively you can just install the regular version:
-
-Download https://github.com/scottmsilver/home-connection-test/raw/master/iperf3-0.1.11.tar.gz
-
-Check if iPerf installed supports authentication if you plan to use it and is version 3.8 or higher (notice "authentication" in the list below)
-
 ```
 iperf3 --version
 ```
@@ -65,17 +58,6 @@ iperf3 --version
 iperf 3.9+ (cJSON 1.7.13)
 Linux measure-slc 5.4.0-59-generic #65-Ubuntu SMP Thu Dec 10 12:01:51 UTC 2020 x86_64
 Optional features available: CPU affinity setting, IPv6 flow label, TCP congestion algorithm setting, sendfile / zerocopy, socket pacing, authentication, bind to device
-```
-
-```
-pip3 install iperf3-0.1.11.tar.gz
-
-```
-
-Or use the regular version if you don't need authentication.
-
-```
-pip3 install iperf3
 ```
 
 
@@ -96,39 +78,13 @@ sudo apt-get install speedtest-cli
 ## Install speedtest python
 
 ```
-pip3 install speedtest-cli
+pip3 install git+https://github.com/sivel/speedtest-cli.git
 ```
 
-## Install influxdb 
 
-https://docs.influxdata.com/influxdb/v1.8/introduction/install/
-Be sure to start the daemon running it running.
 
-Test influx
 
-```
-influx
-> show databases
-name
-----
-_internal
-
-> create database example
-> show databases
-show databases
-name: databases
-name
-----
-_internal
-example
-y
-```
-
-## Install influx python adaptor
-
-```
-pip3 install influxdb
-```
+## Test your installation
 
 Now start collecting some data without authentication - send data by default to influxd running on localhost at 8086.
 Be sure to change server and server port since you can't use mine :-)
@@ -142,6 +98,10 @@ Now start collecting data with authentication - be sure to change MYUSER and MYP
 ```
 python3 collect-data.py --iperf-server 35.224.53.38 --iperf-server-port 6202 --iperf-public-key-file public.pem --iperf-username=MYUSER --iperf-password=MYPASSWORD --speedtest-csv-file=speedtest.csv --iperf-csv-file=iperf.csv
 ```
+
+## Configure telegraf for influx (or whatever else you want to use for storage 
+
+## Modify telegraf 
 
 ```
 running speedtest
@@ -183,7 +143,7 @@ time                DOWNLOAD_BPS       SERVER                STATUS UPLOAD_BPS
 1596318520005486000 116783529.13795431 Scotts-Mac-mini.local OK     29744266.07239603
 ```
 
-Now lets show some pretty graphs.
+## Now lets show some pretty graphs.
 
 Install grafana the *OSS* (open source software version)
 
@@ -214,19 +174,5 @@ Example dashboards
 ![Image of dashboard](https://github.com/scottmsilver/home-connection-test/blob/master/dashboard_example.png)
 
 
-## Notes on iperf3
 
-The stuff in repositories doesn't support auth.
-So, important to build it yourself or downlaod and install.
-If you build yourself, be sure to install openssl-dev first
-
-To install and build iperf3:
-
-```
-sudo apt-get install libssl-dev
-git clone https://github.com/esnet/iperf
-cd iperf
-make
-sudo make install
-```
 
