@@ -1,5 +1,7 @@
+#!/usr/bin/python3
+
 import speedtest
-import metric
+from metric import Metric
 
 # Run speedtest and output a telegraf line format result
 def runSpeedtestTest():
@@ -15,9 +17,9 @@ def runSpeedtestTest():
     s.upload()
     results = s.results.dict()
     metric.add_tag("result", "SUCCESS")
-    metric.add_tag("client", results["client"])
-    metric.add_tag("download_bps", results['download'])
-    metric.add_tag("upload_bps", results['upload'])
+    metric.add_tag("client", results["client"]['ip'])
+    metric.add_value("download_bps", results['download'])
+    metric.add_value("upload_bps", results['upload'])
   finally:
     print(metric)
   
