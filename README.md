@@ -81,37 +81,75 @@ sudo apt-get install speedtest-cli
 pip3 install git+https://github.com/sivel/speedtest-cli.git
 ```
 
+## Set-up iperf3 for authentication
 
+Left as exercise to reader.
 
+## Create a config file and copy over your public key file.
 
-## Test your installation
-
-Now start collecting some data without authentication - send data by default to influxd running on localhost at 8086.
-Be sure to change server and server port since you can't use mine :-)
-
+Create a file called "config.env" in the same top-level directory.
 ```
-python3 collect-data.py --iperf-server 35.224.53.38 --iperf-server-port 6201
-```
-
-Now start collecting data with authentication - be sure to change MYUSER and MYPASSWORD and the server certificate.
-
-```
-python3 collect-data.py --iperf-server 35.224.53.38 --iperf-server-port 6202 --iperf-public-key-file public.pem --iperf-username=MYUSER --iperf-password=MYPASSWORD --speedtest-csv-file=speedtest.csv --iperf-csv-file=iperf.csv
+cat config.env
+IPERF_SERVER="SERVER"
+IPERF_USERNAME="USERNAME"
+IPERF_PASSWORD="PASSWORD"
 ```
 
-## Configure telegraf for influx (or whatever else you want to use for storage 
+Make sure your public key file called "public.pem" is in the same directory also.
+
+## Test your udp test installation
+
+```
+$ ./run-udptest.sh 6201 # Assume your iperf3 server is running on 6201
+udptest,result=SUCCESS,local_host=32.141.91.18 packet_lost_percent=0i,jitter_ms=0.0741303,upload_mbps=1.0002e+06
+```
+
+## Test your speedtest test installation
+
+```
+$ python3 speedtest-telegraf.py
+speedtest,result=SUCCESS,client=76.103.100.176 download_bps=2.01315e+08,upload_bps=1.8573e+07
+```
+
+## Configure telegraf for influx (or whatever else you want to use for storage)
 
 ## Modify telegraf 
 
 ```
-running speedtest
-running iperftest
-sleeping for 300 seconds
+[[inputs.exec]]
+   ## Commands array
+   commands = [
+     "/home/ssilver/home-connection-test/run-udptest.sh 6201",
+     "/home/ssilver/home-connection-test/run-udptest.sh 6202",
+     "/home/ssilver/home-connection-test/speedtest-telegraf.py"
+   ]
+
+   ## Timeout for each command to complete.
+   timeout = "30s"
+   interval = "1m"
+
+
+   data_format = "influx"
 ```
 
-Now verify there is data 
+## Test telegraf
+
+Now verify that telegraf works. 
 
 ```
+$ telegraf --test
+> udptest,host=measure2,local_host=22.103.100.176,result=SUCCESS jitter_ms=2.55702,packet_lost_percent=0i,upload_mbps=1000210 1620012530000000000
+> speedtest,client=22.103.100.176,host=measure2,result=SUCCESS download_bps=182191000,upload_bps=22561600 1620012547000000000
+```
+
+## Restart telegraf
+
+Restart telegraf and then data should start flowing to however you configured your output (I use influx)
+
+```
+$ systemctl restart telegraf
+```
+
 $ influx
 
 > use example
