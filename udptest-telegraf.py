@@ -7,24 +7,25 @@ import os
 import json
 
 class NetworkTester:
-    def __init__(self, iperfServer, iperfServerPort, iperfServerUploadMbits, iperfServerUploadDuration, server, iperfUsername, iperfPassword, iperfPublicKeyFile):
-        self.iperfServer = iperfServer
-        self.iperfServerPort = iperfServerPort
-        self.iperfServerUploadMbits = iperfServerUploadMbits
-        self.iperfServerUploadDuration = iperfServerUploadDuration
-        self.server = server
-        self.iperfPassword = iperfPassword
-        self.iperfUsername = iperfUsername
-        self.iperfPublicKeyFile = iperfPublicKeyFile
+  def __init__(self, iperfServer, iperfServerPort, iperfServerUploadMbits, iperfServerUploadDuration, server, iperfUsername, iperfPassword, iperfPublicKeyFile):
+    self.iperfServer = iperfServer
+    self.iperfServerPort = iperfServerPort
+    self.iperfServerUploadMbits = iperfServerUploadMbits
+    self.iperfServerUploadDuration = iperfServerUploadDuration
+    self.server = server
+    self.iperfPassword = iperfPassword
+    self.iperfUsername = iperfUsername
+    self.iperfPublicKeyFile = iperfPublicKeyFile
 
-    # Make an iPerf UDP connection of the desired size and duration.
-    # Return the iPerf result object.
-    # IPERF3_PASSWORD=PASSWORD iperf3 -c 35.224.173.82 -p 6202 --rsa-public-key-path public.pem --username "PASSWORD" -u -t 3 -J --get-server-output
-    def calliPerf(self):
-      import subprocess, os
-      my_env = os.environ.copy()
-      my_env["IPERF3_PASSWORD"] = self.iperfPassword
-      return subprocess.run([
+  # Fork out to iperf3 and return the CalledProcess from run().
+  # We used to use the iperf3 python bindings but they were finicky and this seemed way
+  # more portable and not fragile wrt the .so files..
+  # IPERF3_PASSWORD=PASSWORD iperf3 -c 35.224.173.82 -p 6202 --rsa-public-key-path public.pem --username "PASSWORD" -u -t 3 -J --get-server-output
+  def calliPerf(self):
+    import subprocess, os
+    my_env = os.environ.copy()
+    my_env["IPERF3_PASSWORD"] = self.iperfPassword
+    return subprocess.run([
         'iperf3',
         '-c', self.iperfServer,
         '-p', "%d" % self.iperfServerPort,
@@ -37,32 +38,40 @@ class NetworkTester:
         '--get-server-output'],
         env = my_env, capture_output = True, check = True)
 
-    # Run and output telegraf line format for a single test.
-    def runiPerfTest(self):
-      metric = Metric("udptest")
-      # Presume we will fail.
-      metric.add_tag("result", "FAIL")
-      metric.add_value("packet_lost_percent", 100.0)
-  
-      try:
-        completedProcess = self.calliPerf()
-        completedProcess.check_returncode()
-        result = json.loads(completedProcess.stdout)
-        # The server output contains where the server accepted a connection from.
-        # In some setups the client may exit through multiple IP addresses so we want to record
-        # the actual public egress / ingress point from the client.
-        p = re.compile('Accepted connection from (\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})')
-        m = p.search(result['server_output_text'])
-        connection_ip_address = m.group(1)
-        summary = result['end']['sum']
-        metric.add_tag("result", "SUCCESS")
-        metric.add_tag("local_host", connection_ip_address)
-        metric.add_value("packet_lost_percent", summary['lost_percent'])
-        metric.add_value("jitter_ms", summary['jitter_ms'])
-        metric.add_value("upload_mbps", summary['bits_per_second'])
-      finally:
-        print(metric)
-  
+  # Run and output telegraf line format for a single test.
+  def runiPerfTest(self):
+    metric = Metric("udptest")
+    # Presume we will fail.
+    metric.add_tag("result", "FAIL")
+    metric.add_value("packet_lost_percent", 100.0)
+    
+    try:
+      completedProcess = self.calliPerf()
+      completedProcess.check_returncode()
+
+      # Parse the returned Json.
+      result = json.loads(completedProcess.stdout)
+
+      # Extract out the egress point from our network in a kludgy way from
+      # the server_output_text contents.
+      # The server output contains where the server accepted a connection from.
+      # In some setups the client may exit through multiple IP addresses so we want to record
+      # the actual public egress / ingress point from the client.
+      p = re.compile('Accepted connection from (\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})')
+      m = p.search(result['server_output_text'])
+      connection_ip_address = m.group(1)
+
+      # Extract out the various pieces of the summary of the transmission we wish to record.
+      summary = result['end']['sum']
+      metric.add_tag("result", "SUCCESS")
+      metric.add_tag("local_host", connection_ip_address)
+      metric.add_value("packet_lost_percent", summary['lost_percent'])
+      metric.add_value("jitter_ms", summary['jitter_ms'])
+      metric.add_value("upload_mbps", summary['bits_per_second'])
+    finally:
+      # Print out the telegraf wire line format of our metric.
+      print(metric)
+        
 
 parser = argparse.ArgumentParser(description='Collect performance data.')
 parser.add_argument('--iperf-server', default='localhost', help = 'iperf3 server to use')
