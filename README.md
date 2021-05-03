@@ -150,35 +150,50 @@ Restart telegraf and then data should start flowing to however you configured yo
 $ systemctl restart telegraf
 ```
 
-$ influx
+## See your data in influx (if that's what you're using)
 
-> use example
-Using database example
-
-> select * from speedtest limit 10
-select * from speedtest limit 10
-
+```
+root@measure2:/home/ssilver/home-connection-test# influx
+Connected to http://localhost:8086 version 1.8.5
+InfluxDB shell version: 1.8.5
+> use telegraf
+Using database telegraf
 > show measurements
-
-show measurements
 name: measurements
-
 name
 ----
+cpu
+disk
+diskio
+energy
+gateways
+hosts
+kernel
+mem
+net
+pf
+ping
+processes
+procstat
+purpleair
 speedtest
-upload_packet_loss
-
-> select * from speedtest
-name: speedtest
-time                DOWNLOAD_BPS       SERVER                STATUS UPLOAD_BPS
-----                ------------       ------                ------ ----------
-1596316554000083000 150367910.1738828  Scotts-Mac-mini.local OK     16206322.815829203
-1596316884160920000 56917306.34614502  Scotts-Mac-mini.local OK     11493037.363126963
-1596317211680887000 76242366.84952107  Scotts-Mac-mini.local OK     25434847.212901887
-1596317538567693000 132096460.92245014 Scotts-Mac-mini.local OK     17117134.734898627
-1596317865717493000 108213226.30501562 Scotts-Mac-mini.local OK     12293346.949994646
-1596318192804164000 123236441.30121537 Scotts-Mac-mini.local OK     12232978.96974388
-1596318520005486000 116783529.13795431 Scotts-Mac-mini.local OK     29744266.07239603
+swap
+system
+udptest
+> select * from udptest limit 10
+name: udptest
+time                host     jitter_ms local_host     packet_lost_percent result  upload_mbps
+----                ----     --------- ----------     ------------------- ------  -----------
+1619994666000000000 measure2 0.0538207 32.141.91.18   0                   SUCCESS 1000220
+1619994666000000000 measure2 2.64691   76.103.100.176 0                   SUCCESS 1000220
+1619994726000000000 measure2 0.0400759 32.141.91.18   0                   SUCCESS 1000220
+1619994726000000000 measure2 2.58087   76.103.100.176 0                   SUCCESS 1000220
+1619994786000000000 measure2 0.0473156 32.141.91.18   0                   SUCCESS 1000220
+1619994786000000000 measure2 2.63582   76.103.100.176 0                   SUCCESS 1000220
+1619994846000000000 measure2 0.100663  32.141.91.18   0                   SUCCESS 1000220
+1619994846000000000 measure2 2.07652   76.103.100.176 0                   SUCCESS 1000220
+1619994906000000000 measure2 0.0533751 32.141.91.18   0                   SUCCESS 1000220
+1619994906000000000 measure2 2.66971   76.103.100.176 0                   SUCCESS 1000200
 ```
 
 ## Now lets show some pretty graphs.
@@ -200,7 +215,7 @@ Add Data Source (http://localhost:3000/datasources)
 
 1. Type is InfluxDB
 2. Server is http://localhost:8086
-3. Database is "example"
+3. Database is "telegraf"
 4. Click Test at bottom and it should work.
 
 Example query
