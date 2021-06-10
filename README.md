@@ -86,9 +86,9 @@ Left as exercise to reader.
 
 ## Create a config file and copy over your public key file.
 
-Create a file called "config.env" in the same top-level directory.
+Create a file called "config.env" in the same top-level directory (here's what it looks like)
 ```
-cat config.env
+$ cat config.env
 IPERF_SERVER="SERVER"
 IPERF_USERNAME="USERNAME"
 IPERF_PASSWORD="PASSWORD"
