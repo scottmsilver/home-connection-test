@@ -6,8 +6,7 @@ home-connection-test tests your connection so you can understand how your home i
 
 # Overview
 
-This package provides two scripts which output telegraf line format for monitoring connectivity.
-
+This package provides two scripts which output telegraf line format for monitoring connectivity. The basic idea is that run-udpscript.sh will output the "line format" that telegraf understands and hten you will be able to incorporate it into whatever kind of telegraf monitoring you have. 
 
 # Installation
 
