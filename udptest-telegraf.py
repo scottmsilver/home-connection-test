@@ -17,7 +17,7 @@ class NetworkTester:
     self.iperfUsername = iperfUsername
     self.iperfPublicKeyFile = iperfPublicKeyFile
 
-  # Fork out to iperf3 and return the CalledProcess from run().
+  # Fork out to iperf3 and return the CompletedProcess from run().
   # We used to use the iperf3 python bindings but they were finicky and this seemed way
   # more portable and not fragile wrt the .so files..
   # IPERF3_PASSWORD=PASSWORD iperf3 -c 35.224.173.82 -p 6202 --rsa-public-key-path public.pem --username "PASSWORD" -u -t 3 -J --get-server-output
@@ -65,7 +65,7 @@ class NetworkTester:
       summary = result['end']['sum']
       metric.add_tag("result", "SUCCESS")
       metric.add_tag("local_host", connection_ip_address)
-      metric.add_value("packet_lost_percent", summary['lost_percent'])
+      metric.add_value("packet_lost_percent", float(summary['lost_percent']))
       metric.add_value("jitter_ms", summary['jitter_ms'])
       metric.add_value("upload_mbps", summary['bits_per_second'])
     finally:
