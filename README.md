@@ -6,8 +6,7 @@ home-connection-test tests your connection so you can understand how your home i
 
 # Overview
 
-This package provides two scripts which output telegraf line format for monitoring connectivity.
-
+This package provides two scripts which output telegraf line format for monitoring connectivity. The basic idea is that run-udpscript.sh will output the "line format" that telegraf understands and hten you will be able to incorporate it into whatever kind of telegraf monitoring you have. 
 
 # Installation
 
@@ -87,9 +86,9 @@ Left as exercise to reader.
 
 ## Create a config file and copy over your public key file.
 
-Create a file called "config.env" in the same top-level directory.
+Create a file called "config.env" in the same top-level directory (here's what it looks like)
 ```
-cat config.env
+$ cat config.env
 IPERF_SERVER="SERVER"
 IPERF_USERNAME="USERNAME"
 IPERF_PASSWORD="PASSWORD"
