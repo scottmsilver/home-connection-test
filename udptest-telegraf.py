@@ -62,12 +62,18 @@ class NetworkTester:
       connection_ip_address = m.group(1)
 
       # Extract out the various pieces of the summary of the transmission we wish to record.
+      # NB: The first metric we store will create the schema based on the types of the
+      # values. In particular for the numeric values if we expect them to be floats
+      # we must ensure that we store integers as floats.
+      # Concretely "packet_lost_percent" is often zero. And so the first time through
+      # we could end up setting the type of this field as integer, but subseqently without
+      # packet loss we would need a flaot, hence the cast.
       summary = result['end']['sum']
       metric.add_tag("result", "SUCCESS")
       metric.add_tag("local_host", connection_ip_address)
       metric.add_value("packet_lost_percent", float(summary['lost_percent']))
       metric.add_value("jitter_ms", summary['jitter_ms'])
-      metric.add_value("upload_mbps", summary['bits_per_second'])
+      metric.add_value("upload_mbps", float(summary['bits_per_second']))
     finally:
       # Print out the telegraf wire line format of our metric.
       print(metric)
