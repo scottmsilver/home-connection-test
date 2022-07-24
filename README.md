@@ -82,7 +82,7 @@ pip3 install git+https://github.com/sivel/speedtest-cli.git
 
 ## Set-up iperf3 for authentication
 
-Left as exercise to reader.
+Left as exercise to reader. This involves generating a public.pem and private.pem and assinging usernames and passwords.
 
 ## Create a config file and copy over your public key file.
 
