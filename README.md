@@ -149,7 +149,7 @@ Restart telegraf and then data should start flowing to however you configured yo
 $ systemctl restart telegraf
 ```
 
-## See your data in influx (if that's what you're using)
+## See your data in influx (if that's what you're using) vs 1.8
 
 ```
 root@measure2:/home/ssilver/home-connection-test# influx
@@ -193,6 +193,18 @@ time                host     jitter_ms local_host     packet_lost_percent result
 1619994846000000000 measure2 2.07652   76.103.100.176 0                   SUCCESS 1000220
 1619994906000000000 measure2 0.0533751 32.141.91.18   0                   SUCCESS 1000220
 1619994906000000000 measure2 2.66971   76.103.100.176 0                   SUCCESS 1000200
+```
+
+## See your data in influx (if that's what you're using) vs 2.0+ InfluxQL
+
+```
+from(bucket: "telegraf")
+  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)
+  |> filter(fn: (r) => r["_measurement"] == "udptest")
+  |> filter(fn: (r) => r["_field"] == "packet_lost_percent")
+  |> aggregateWindow(every: v.windowPeriod, fn: mean, createEmpty: false)
+  |> yield(name: "mean")
+  
 ```
 
 ## Now lets show some pretty graphs.
