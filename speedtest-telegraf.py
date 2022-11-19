@@ -13,7 +13,7 @@ def runSpeedtestTest():
   metric.add_value("upload_bps", 0.0)
   
   try:
-    s = speedtest.Speedtest()
+    s = speedtest.Speedtest(secure = True)
     s.get_servers()
     s.get_best_server()
     s.download()
