@@ -24,7 +24,7 @@ def runSpeedtestTest():
     metric.add_value("download_bps", results['download'])
     metric.add_value("upload_bps", results['upload'])
   except Exception as e:
-    print(e, file=sys.stderr)
+    metric.add_value("error_text", repr(e))
   finally:
     print(metric)
   
