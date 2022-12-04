@@ -3,6 +3,7 @@
 import speedtest
 from metric import Metric
 import sys
+from random import randint
 
 # Run speedtest and output a telegraf line format result
 def runSpeedtestTest():
@@ -11,9 +12,15 @@ def runSpeedtestTest():
   metric.add_tag("result", "FAIL")
   metric.add_value("download_bps", 0.0)
   metric.add_value("upload_bps", 0.0)
+
+  # Select a source port int he range sourcePortStart to sourcePortStart + 999
+  # This avoids the case waiting for the socked to close.
+  sourcePortStart = 0 if len(sys.argv) == 0 else int(sys.argv[1])
+  sourcePort = 0 if sourcePortStart == 0 else sourcePortStart + randint(0, 999)
+  sourceAddress = '' if len(sys.argv) == 0 else ':{}'.format(sourcePort)
   
   try:
-    s = speedtest.Speedtest(secure = True)
+    s = speedtest.Speedtest(secure = True, source_address = sourceAddress)
     s.get_servers()
     s.get_best_server()
     s.download()

@@ -12,6 +12,6 @@ IPERF_PASSWORD="password"
 source $DIR/config.env
 timeout 10 python3 $DIR/udptest-telegraf.py --iperf-server $IPERF_SERVER --iperf-server-port $PORT --iperf-public-key-file $DIR/public.pem --iperf-username=$IPERF_USERNAME --iperf-password=$IPERF_PASSWORD --iperf-upload-mbits=3
 
-timeout 30 python3 $DIR/tcptest-telegraf.py --iperf-server $IPERF_SERVER --iperf-server-port $PORT --iperf-public-key-file $DIR/public.pem --iperf-username=$IPERF_USERNAME --iperf-password=$IPERF_PASSWORD --iperf-mode download
+#timeout 30 python3 $DIR/tcptest-telegraf.py --iperf-server $IPERF_SERVER --iperf-server-port $PORT --iperf-public-key-file $DIR/public.pem --iperf-username=$IPERF_USERNAME --iperf-password=$IPERF_PASSWORD --iperf-mode download
 
-timeout 30 python3 $DIR/tcptest-telegraf.py --iperf-server $IPERF_SERVER --iperf-server-port $PORT --iperf-public-key-file $DIR/public.pem --iperf-username=$IPERF_USERNAME --iperf-password=$IPERF_PASSWORD --iperf-mode upload
+#timeout 30 python3 $DIR/tcptest-telegraf.py --iperf-server $IPERF_SERVER --iperf-server-port $PORT --iperf-public-key-file $DIR/public.pem --iperf-username=$IPERF_USERNAME --iperf-password=$IPERF_PASSWORD --iperf-mode upload
