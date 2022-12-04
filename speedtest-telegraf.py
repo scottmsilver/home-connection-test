@@ -1,9 +1,8 @@
 #!/usr/bin/python3
-
-import speedtest
-from metric import Metric
-import sys
+from influx_line_protocol import Metric
 from random import randint
+import speedtest
+import sys
 
 # Run speedtest and output a telegraf line format result
 def runSpeedtestTest():
