@@ -14,7 +14,7 @@ def runSpeedtestTest():
 
   # Select a source port int he range sourcePortStart to sourcePortStart + 999
   # This avoids the case waiting for the socked to close.
-  sourcePortStart = 0 if len(sys.argv) == 0 else int(sys.argv[1])
+  sourcePortStart = 0 if len(sys.argv) == 1 else int(sys.argv[1])
   sourcePort = 0 if sourcePortStart == 0 else sourcePortStart + randint(0, 999)
   sourceAddress = '' if len(sys.argv) == 0 else ':{}'.format(sourcePort)
   
