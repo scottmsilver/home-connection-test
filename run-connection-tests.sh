@@ -8,7 +8,7 @@ IPERF_SEVER="foo"
 IPERF_USERNAME="username"
 IPERF_PASSWORD="password"
 
-#source $DIR/environment/bin/activate
+source $DIR/env/bin/activate
 source $DIR/config.env
 timeout 10 python3 $DIR/udptest-telegraf.py --iperf-server $IPERF_SERVER --iperf-server-port $PORT --iperf-public-key-file $DIR/public.pem --iperf-username=$IPERF_USERNAME --iperf-password=$IPERF_PASSWORD --iperf-upload-mbits=3
 
