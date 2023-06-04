@@ -4,12 +4,11 @@ import speedtest
 import sys
 import re
 import subprocess
+import psutil
 
 # return ip address associated with ifname
 def get_ip_address(ifname):
-  ifconfig_output = subprocess.run(['ifconfig', ifname], stdout=subprocess.PIPE).stdout.decode('utf-8')
-  m = re.search('\w*inet ([0-9]+\.[0-9]+\.[0-9]+\.[0-9]+)', ifconfig_output)
-  return m.group(1)
+  return psutil.net_if_addrs()[ifname][0].address
 
 # Run speedtest and output a telegraf line format result
 def runSpeedtestTest():
@@ -41,3 +40,4 @@ def runSpeedtestTest():
   finally:
     print(metric)
   
+  runSpeedtestTest()

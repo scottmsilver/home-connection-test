@@ -1,2 +1,6 @@
 public.pem
 config.env
+udptest-telegraf.py
+env/
+__pycache__/
+*.service

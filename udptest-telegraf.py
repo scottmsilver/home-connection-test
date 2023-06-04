@@ -45,7 +45,7 @@ class NetworkTester:
   def runiPerfTest(self):
     metric = Metric("udptest")
     # Presume we will fail.
-    metric.add_tag("result", "FAIL")
+    metric.add_value("result", "FAIL")
     metric.add_value("packet_lost_percent", 100.0)
     metric.add_tag("interface_name", self.interfaceName)
      
@@ -73,7 +73,7 @@ class NetworkTester:
       # we could end up setting the type of this field as integer, but subseqently without
       # packet loss we would need a flaot, hence the cast.
       summary = result['end']['sum']
-      metric.add_tag("result", "SUCCESS")
+      metric.add_value("result", "SUCCESS")
       metric.add_tag("local_host", connection_ip_address)
       metric.add_value("packet_lost_percent", float(summary['lost_percent']))
       metric.add_value("jitter_ms", summary['jitter_ms'])
