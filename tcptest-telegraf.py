@@ -1,7 +1,7 @@
 import argparse
 import socket
 import re
-from metric import Metric
+from influx_line_protocol import Metric
 import subprocess
 import os
 import json
