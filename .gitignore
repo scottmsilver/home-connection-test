@@ -2,4 +2,6 @@ public.pem
 config.env
 env/
 hct-env/
+env/
 __pycache__/
+*.service

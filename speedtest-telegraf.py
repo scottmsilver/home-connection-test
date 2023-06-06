@@ -1,8 +1,14 @@
 #!/usr/bin/python3
 from influx_line_protocol import Metric
-from random import randint
 import speedtest
 import sys
+import re
+import subprocess
+import psutil
+
+# return ip address associated with ifname
+def get_ip_address(ifname):
+  return psutil.net_if_addrs()[ifname][0].address
 
 # Run speedtest and output a telegraf line format result
 def runSpeedtestTest():
@@ -12,14 +18,14 @@ def runSpeedtestTest():
   metric.add_value("download_bps", 0.0)
   metric.add_value("upload_bps", 0.0)
 
-  # Select a source port int he range sourcePortStart to sourcePortStart + 999
-  # This avoids the case waiting for the socked to close.
-  sourcePortStart = 0 if len(sys.argv) == 1 else int(sys.argv[1])
-  sourcePort = 0 if sourcePortStart == 0 else sourcePortStart + randint(0, 999)
-  sourceAddress = '' if len(sys.argv) == 0 else ':{}'.format(sourcePort)
-  
+  ifname = sys.argv[1] 
+  metric.add_tag("interface", ifname)
+
+  # find ip address associated with this interface 
+  ip_address = get_ip_address(ifname)
+ 
   try:
-    s = speedtest.Speedtest(secure = True, source_address = sourceAddress)
+    s = speedtest.Speedtest(secure = True, source_address = ip_address)
     s.get_servers()
     s.get_best_server()
     s.download()
@@ -34,4 +40,4 @@ def runSpeedtestTest():
   finally:
     print(metric)
   
-runSpeedtestTest()
+  runSpeedtestTest()

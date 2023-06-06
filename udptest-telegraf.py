@@ -5,9 +5,11 @@ from influx_line_protocol import Metric
 import subprocess
 import os
 import json
+import signal
+import sys
 
 class NetworkTester:
-  def __init__(self, iperfServer, iperfServerPort, iperfServerUploadMbits, iperfServerUploadDuration, server, iperfUsername, iperfPassword, iperfPublicKeyFile):
+  def __init__(self, iperfServer, iperfServerPort, iperfServerUploadMbits, iperfServerUploadDuration, server, iperfUsername, iperfPassword, iperfPublicKeyFile, interfaceName):
     self.iperfServer = iperfServer
     self.iperfServerPort = iperfServerPort
     self.iperfServerUploadMbits = iperfServerUploadMbits
@@ -16,6 +18,7 @@ class NetworkTester:
     self.iperfPassword = iperfPassword
     self.iperfUsername = iperfUsername
     self.iperfPublicKeyFile = iperfPublicKeyFile
+    self.interfaceName = interfaceName
 
   # Fork out to iperf3 and return the CompletedProcess from run().
   # We used to use the iperf3 python bindings but they were finicky and this seemed way
@@ -42,9 +45,10 @@ class NetworkTester:
   def runiPerfTest(self):
     metric = Metric("udptest")
     # Presume we will fail.
-    metric.add_tag("result", "FAIL")
+    metric.add_value("result", "FAIL")
     metric.add_value("packet_lost_percent", 100.0)
-    
+    metric.add_tag("interface_name", self.interfaceName)
+     
     try:
       completedProcess = self.calliPerf()
       completedProcess.check_returncode()
@@ -69,7 +73,7 @@ class NetworkTester:
       # we could end up setting the type of this field as integer, but subseqently without
       # packet loss we would need a flaot, hence the cast.
       summary = result['end']['sum']
-      metric.add_tag("result", "SUCCESS")
+      metric.add_value("result", "SUCCESS")
       metric.add_tag("local_host", connection_ip_address)
       metric.add_value("packet_lost_percent", float(summary['lost_percent']))
       metric.add_value("jitter_ms", summary['jitter_ms'])
@@ -88,8 +92,17 @@ parser.add_argument('--iperf-upload-mbits', default=1, type=int, help = 'Megabit
 parser.add_argument('--iperf-server-port', default=5201, type=int, help = 'port of iperf3 server to which we should connect.')
 parser.add_argument('--iperf-upload-duration', default=5, type=int, help = 'Seconds to run test for')
 parser.add_argument('--server', default = socket.gethostname(), help='Name of server doing measurement')
+parser.add_argument('--interface-name', default = "unknown", help='pretty name for interface you are trying to measure, just for decoration purposes')
+parser.add_argument('--timeout', default = 2, type=int, help='timeout value in seconds')
+
 
 args = parser.parse_args()
-tester = NetworkTester(args.iperf_server, args.iperf_server_port, args.iperf_upload_mbits, args.iperf_upload_duration, args.server, args.iperf_username, args.iperf_password, args.iperf_public_key_file)
+tester = NetworkTester(args.iperf_server, args.iperf_server_port, args.iperf_upload_mbits, args.iperf_upload_duration, args.server, args.iperf_username, args.iperf_password, args.iperf_public_key_file, args.interface_name)
 
+signal.alarm(args.timeout) 
+
+def sigalarm_handler(signum, frame):
+  sys.exit(0)
+
+signal.signal(signal.SIGALRM, sigalarm_handler) 
 tester.runiPerfTest()
