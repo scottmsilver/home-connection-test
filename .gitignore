@@ -5,3 +5,4 @@ hct-env/
 env/
 __pycache__/
 *.service
+*~

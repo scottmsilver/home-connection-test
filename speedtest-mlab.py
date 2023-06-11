@@ -2,10 +2,14 @@ from influx_line_protocol import Metric
 import sys
 import subprocess
 import json
+import argparse
 
 # Run mlab speedtest and output a telegraf line format result inside of
 # a network namespace using the nets-exec tool, which is a wrapper around
 # the ip netns exec command, but runs as non root user.
+# docker run --cap-add=NET_ADMIN -it ssilver/alpine-smarter:1.0 bash 
+# iptables -t mangle -A POSTROUTING -j DSCP --set-dscp-class AF12
+# curl -s ipinfo.io/ip
 #
 # Takes two argumennts, the interface nickname and the network namespace to run the test in and
 # the path to ndt7-client.
@@ -15,7 +19,7 @@ import json
 #
 # You must install netns-esec and ndt7-client.
 #
-# To install ndt7-client
+# To install ndt7-client (install go first if necessary)
 #
 # git clone https://github.com/m-lab/ndt7-client-go.git
 # cd ndt7-client-go
@@ -30,25 +34,32 @@ import json
 # sudo make install
 
 # Runs a single speedtest and outputs the results in telegraf line format.
-def runSpeedtestTest():
+def runSpeedtestTest(desired_interface, ndt7_binary, dscp_class):
   metric = Metric("speedtest")
   # Presume we will fail.
   metric.add_value("result", "FAIL")
   metric.add_value("download_bps", 0.0)
   metric.add_value("upload_bps", 0.0)
 
-  ifname = sys.argv[1] 
-  network_namespace = sys.argv[2]
-  ndt7_client = sys.argv[3] # path for ndt7-client-go
 
-  metric.add_tag("desired_interface", ifname)
+  metric.add_tag("desired_interface", desired_interface)
   metric.add_tag("actual_interface", "unknown")
 
   try:
+    # optionally set the dscp class of outbound traffic, this presumes we are running as root and or can use iptables.
+    if dscp_class:
+      process = subprocess.run([
+        f"iptables",
+        "-t", "mangle",
+        "-A", "POSTROUTING",
+        "-j", "DSCP",
+        "--set-dscp-class", dscp_class], 
+        capture_output = True, check = True)
+      process.check_returncode()
+
     # call a a go program to measure the speed
     process = subprocess.run([
-      "netns-exec", network_namespace,
-      f"{ndt7_client}",
+      f"{ndt7_binary}",
       "--format=json",
       "--quiet"], 
       capture_output = True, check = True)
@@ -65,5 +76,22 @@ def runSpeedtestTest():
     metric.add_value("error_text", repr(e))
   finally:
     print(metric)
+
+def main():
+  parser = argparse.ArgumentParser()
+  parser.add_argument("-i", "--desired_interface", help="The desired interface")
+  parser.add_argument("-b", "--ndt7_binary", help="The NDT7 binary")
+  parser.add_argument("-d", "--dscp_class", help="The DSCP class")
+  args = parser.parse_args()
+
+  if not args.desired_interface:
+    print("Please specify the desired interface")
+    return
+
+  if not args.ndt7_binary:
+    print("Please specify the NDT7 binary")
+    return
   
-runSpeedtestTest()
+  runSpeedtestTest(args.desired_interface, args.ndt7_binary, args.dscp_class)
+
+main()
