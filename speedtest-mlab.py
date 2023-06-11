@@ -23,7 +23,7 @@ import argparse
 #
 # git clone https://github.com/m-lab/ndt7-client-go.git
 # cd ndt7-client-go
-# go build ./cmd/ndt7-client/
+# CGO_ENABLED=0 go build ./cmd/ndt7-client/
 # ndt7-client will be in the root
 #
 # To install netns-exec:

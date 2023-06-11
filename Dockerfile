@@ -11,3 +11,9 @@ COPY udptest-telegraf.py .
 
 # docker build -t ssilver/connection-test:1.0 .
 # docker run --cap-add=NET_ADMIN ssilver/connection-test:1.0 python3 speedtest-mlab.py --desired_interface att --ndt7_binary=ndt7-client --dscp_class=AF12
+# sudo usermod -aG docker telegraf
+# newgrp docker
+# now test with:
+# become telegraf
+# sudo -u telegraf bash
+# telegraf -test
