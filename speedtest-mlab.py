@@ -4,9 +4,8 @@ import subprocess
 import json
 import argparse
 
-# Run mlab speedtest and output a telegraf line format result inside of
-# a network namespace using the nets-exec tool, which is a wrapper around
-# the ip netns exec command, but runs as non root user.
+# Run mlab speedtest and output a telegraf line format result with a certain
+# class of service.
 # docker run --cap-add=NET_ADMIN -it ssilver/alpine-smarter:1.0 bash 
 # iptables -t mangle -A POSTROUTING -j DSCP --set-dscp-class AF12
 # curl -s ipinfo.io/ip
@@ -19,19 +18,13 @@ import argparse
 #
 # You must install netns-esec and ndt7-client.
 #
-# To install ndt7-client (install go first if necessary)
+# To install ndt7-client (install go first if necessary - sudo apt-get install golang)
 #
 # git clone https://github.com/m-lab/ndt7-client-go.git
 # cd ndt7-client-go
 # CGO_ENABLED=0 go build ./cmd/ndt7-client/
 # ndt7-client will be in the root
-#
-# To install netns-exec:
-# git clone https://github.com/pekman/netns-exec 
-# cd netns-exec 
-# git submodule update --init
-# make
-# sudo make install
+# cp ndt7-client next to this file
 
 # Runs a single speedtest and outputs the results in telegraf line format.
 def runSpeedtestTest(desired_interface, ndt7_binary, dscp_class):
