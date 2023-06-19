@@ -6,3 +6,4 @@ env/
 __pycache__/
 *.service
 *~
+ndt7-client
