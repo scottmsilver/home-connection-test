@@ -2,113 +2,41 @@
 
 # About
 
-home-connection-test tests your connection so you can understand how your home internet connection performs over time. It's especially focused on upstream bandwidth that is critical for video conferencing. Its goal is to simulate how video conferencing works and also raw "speedtests" that people use to talk about their internet connection. In particular, video conferencing typically requires high quality UDP streams. When zoom or meet see (upstream or downstream) latency or packet loss via UDP to their servers their clients will start degrading what they receive or send. 
+home-connection-test tests your connection so you can understand how your home internet connection performs over time. It's especially focused on upstream bandwidth that is critical for video conferencing. Its goal is to simulate how video conferencing works and also raw "speedtests" that people use to talk about their internet connection. In particular, video conferencing typically requires high quality UDP streams. When zoom or meet see (upstream or downstream) latency or packet loss via UDP to their servers their clients will start degrading what they receive or send. I spent a fair time fighting with different (tcp) speed test type things too, and eventually settled on mlab.
 
 # Overview
 
-This package provides two scripts which output telegraf line format for monitoring connectivity. The basic idea is that run-udpscript.sh will output the "line format" that telegraf understands and hten you will be able to incorporate it into whatever kind of telegraf monitoring you have. 
+This package provides two scripts that I'd recommend you use from docker.
 
-# Installation
+# Usage
 
-Ensure you have python3 installed
-
-```
-pi@raspberrypi:~ $ python3 -V
-Python 3.7.3
-```
-
-NB: it is ok to have python2 installed (typically it's the default python). I recommend using virtualenv, but don't assume you do.
-
-## Install pip3 (or make sure it's installed)
+## Docker speedtest
 
 ```
-pi@raspberrypi:~ $ pip3 -V
-pip 18.1 from /usr/lib/python3/dist-packages/pip (python 3.7)
+docker run --cap-add=NET_ADMIN scottmsilver/connection-test:1.0 python3 speedtest-mlab.py --desired_interface colony --ndt7_binary=ndt7-client --dscp_class=AF12
 ```
 
-or
+## Docker udptest
 
-debian: 
+# Create config files
 
-```
-sudo apt-get install python3-pip
-```
-
-others go here https://pip.pypa.io/en/stable/installing/
-
-## Install iperf
-
-debian: 
+config.env is a text file
 
 ```
-sudo apt-get install iperf3
+IPERF_SERVER=1.2.3.4
+IPERF_USERNAME=X
+IPERF_PASSWORD=Y
 ```
 
-MacOS: 
+Make a public.pem (if you want it) is a public key file used by iperf3
+
+Now put config.env and public.pem in the same directory and pass it on the command line as below.
+Configure your port which is the port that iperf3 is listening on.
 
 ```
-brew install iperf
+docker run -v /PATH/TO/CONFIG-FILES:/config scottmsilver/connection-test:1.0  bash run-udptest.sh --interface colony --port 6203
 ```
 
-```
-iperf3 --version
-```
-```
-iperf 3.9+ (cJSON 1.7.13)
-Linux measure-slc 5.4.0-59-generic #65-Ubuntu SMP Thu Dec 10 12:01:51 UTC 2020 x86_64
-Optional features available: CPU affinity setting, IPv6 flow label, TCP congestion algorithm setting, sendfile / zerocopy, socket pacing, authentication, bind to device
-```
-
-
-## Install speedtest-cli
-
-MacOS: 
-
-```
-brew install speedtest-cli
-```
-
-Debian: 
-
-```
-sudo apt-get install speedtest-cli
-```
-
-## Install speedtest python
-
-```
-pip3 install git+https://github.com/sivel/speedtest-cli.git
-```
-
-## Set-up iperf3 for authentication
-
-Left as exercise to reader. This involves generating a public.pem and private.pem and assinging usernames and passwords.
-
-## Create a config file and copy over your public key file.
-
-Create a file called "config.env" in the same top-level directory (here's what it looks like)
-```
-$ cat config.env
-IPERF_SERVER="SERVER"
-IPERF_USERNAME="USERNAME"
-IPERF_PASSWORD="PASSWORD"
-```
-
-Make sure your public key file called "public.pem" is in the same directory also.
-
-## Test your udp test installation
-
-```
-$ ./run-udptest.sh 6201 # Assume your iperf3 server is running on 6201
-udptest,result=SUCCESS,local_host=32.141.91.18 packet_lost_percent=0i,jitter_ms=0.0741303,upload_mbps=1.0002e+06
-```
-
-## Test your speedtest test installation
-
-```
-$ python3 speedtest-telegraf.py
-speedtest,result=SUCCESS,client=76.103.100.176 download_bps=2.01315e+08,upload_bps=1.8573e+07
-```
 
 ## Configure telegraf for influx (or whatever else you want to use for storage)
 
@@ -118,9 +46,9 @@ speedtest,result=SUCCESS,client=76.103.100.176 download_bps=2.01315e+08,upload_b
 [[inputs.exec]]
    ## Commands array
    commands = [
-     "/home/ssilver/home-connection-test/run-udptest.sh 6201",
-     "/home/ssilver/home-connection-test/run-udptest.sh 6202",
-     "/home/ssilver/home-connection-test/speedtest-telegraf.py"
+     "docker run -v /PATH/TO/CONFIG-FILES:/config scottmsilver/connection-test:1.0  bash run-udptest.sh --interface colony --port 6203
+",
+     "docker run --cap-add=NET_ADMIN scottmsilver/connection-test:1.0 python3 speedtest-mlab.py --desired_interface colony --ndt7_binary=ndt7-client --dscp_class=AF12"
    ]
 
    ## Timeout for each command to complete.
