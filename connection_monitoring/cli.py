@@ -8,8 +8,13 @@ def main(argv=None):
     parser = argparse.ArgumentParser(prog='connection-monitoring')
     parser.add_argument('--version', action='version', version=__version__)
     parser.add_argument('--config')
-    parser.add_argument('command', choices=['validate', 'notifier', 'firewalla-gate', 'firewalla-quality', 'firewalla-readiness'])
+    parser.add_argument('command', choices=['validate', 'notifier', 'firewalla-gate', 'firewalla-quality', 'firewalla-readiness', 'dirt'])
     args, remaining = parser.parse_known_args(argv)
+    if args.command == 'dirt':
+        if not args.config:
+            parser.error('--config is required for dirt')
+        from .dirt import main as dirt_main
+        return dirt_main(['--config', args.config] + remaining)
     if args.command == 'firewalla-gate':
         from .firewalla_gate import main as helper_main
         return helper_main(remaining)
@@ -25,12 +30,15 @@ def main(argv=None):
         if not args.config:
             raise ConfigError('--config is required for ' + args.command)
         config = load_config(args.config, section='notifier' if args.command == 'notifier' else None)
+        if 'dirt' in config or ('sites' in config and any('wans' in site for site in config['sites'].values() if isinstance(site, dict))):
+            from .wan_fault import validate_config
+            validate_config(config)
         if 'notifier' in config:
             from .notifier_config import validate_runtime_config
             validate_runtime_config(config['notifier'])
         if args.command == 'notifier':
             from .alert_server import main as notifier_main
             notifier_main(config['notifier'])
-    except ConfigError as error:
+    except (ConfigError, ValueError) as error:
         parser.error(str(error))
     return 0
