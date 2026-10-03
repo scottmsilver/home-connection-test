@@ -1,0 +1,16 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "connection-monitoring"
+version = "0.1.0"
+description = "Explicitly configured reusable connection monitoring tools"
+requires-python = ">=3.8"
+dependencies = []
+
+[project.scripts]
+connection-monitoring = "connection_monitoring.cli:main"
+
+[tool.setuptools]
+packages = ["connection_monitoring"]
