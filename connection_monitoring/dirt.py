@@ -191,7 +191,7 @@ print(json.dumps(result))
 )
 
 
-def run(site, wan, run_id, emit, poll=15):
+def run(site, wan, run_id, emit, poll=15, *, before_arm=None):
     source = router_source(site)
 
     def router(action):
@@ -226,6 +226,8 @@ def run(site, wan, run_id, emit, poll=15):
             or ob.get("alert", {}).get("health") != "ok"
         ):
             raise ValueError("Unhealthy baseline or target alert already active")
+        if before_arm is not None:
+            before_arm()
         # The local timer is armed and verified before any packet block is added.
         armed = True
         emit("armed", router("arm"))

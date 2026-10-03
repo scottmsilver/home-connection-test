@@ -1,6 +1,7 @@
 import importlib.util
 from pathlib import Path
 import pytest
+from connection_monitoring.dirt_health import HealthRejected
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -871,3 +872,56 @@ def test_alert_selection_preserves_only_matching_rule_state():
         k: rule[k] for k in ("name", "state", "health", "lastEvaluation", "duration")
     }
     assert "def select_alert_rule" in m.OBSERVER
+
+
+@pytest.mark.parametrize("failure", [HealthRejected("health unavailable"), ValueError("health unavailable"), RuntimeError("observer unavailable"), KeyboardInterrupt()])
+def test_before_arm_failure_emits_failed_result_without_any_mutation(monkeypatch, failure):
+    m = load("dirt")
+    actions, events = [], []
+
+    def ssh(site, role, source, args=()):
+        if role == "monitor":
+            return {"collector_active": True, "internet": True,
+                    "alert": {"state": "inactive", "health": "ok"}}
+        actions.append(args[0])
+        return {"baseline": True}
+
+    def guard():
+        assert actions == ["probe"]
+        assert events[-1][0] == "baseline"
+        raise failure
+
+    monkeypatch.setattr(m, "ssh", ssh)
+    assert not m.run("third-site", "uplink-b", "a" * 32,
+                     lambda stage, data: events.append((stage, data)), before_arm=guard)
+    assert actions == ["probe"]
+    assert events[-1] == ("result", {"passed": False, "checks": {
+        "fault": False, "alert": False, "recovery": False, "cleanup": False}})
+    assert events[-2][1]["kind"] == type(failure).__name__
+
+
+def test_before_arm_runs_after_baseline_and_before_arm_and_inject(monkeypatch):
+    m = load("dirt")
+    order = []
+
+    def ssh(site, role, source, args=()):
+        if role == "monitor":
+            order.append("observe")
+            return {"collector_active": True, "internet": True,
+                    "alert": {"state": "inactive", "health": "ok"}}
+        order.append(args[0])
+        if args[0] == "inject":
+            raise ValueError("stop observation fixture")
+        return {"cleanup": True}
+
+    monkeypatch.setattr(m, "ssh", ssh)
+    assert not m.run("third-site", "uplink-b", "a" * 32, lambda *args: None,
+                     before_arm=lambda: order.append("guard"))
+    assert order == ["probe", "observe", "guard", "arm", "inject", "restore"]
+
+
+def test_unhealthy_baseline_does_not_call_before_arm(monkeypatch):
+    m = load("dirt")
+    monkeypatch.setattr(m, "ssh", lambda *args: {})
+    assert not m.run("third-site", "uplink-b", "a" * 32, lambda *args: None,
+                     before_arm=lambda: pytest.fail("guard preceded baseline acceptance"))
