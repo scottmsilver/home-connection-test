@@ -168,3 +168,8 @@ Example dashboards
 
 
 
+
+## Shared monitoring package
+
+See [shared monitoring](docs/monitoring.md) for the configured alert, Firewalla,
+and DIRT runtime, ownership boundaries, CLI contracts, and development tests.
