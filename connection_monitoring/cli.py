@@ -8,8 +8,19 @@ def main(argv=None):
     parser = argparse.ArgumentParser(prog='connection-monitoring')
     parser.add_argument('--version', action='version', version=__version__)
     parser.add_argument('--config')
-    parser.add_argument('command', choices=['validate', 'notifier'])
-    args = parser.parse_args(argv)
+    parser.add_argument('command', choices=['validate', 'notifier', 'firewalla-gate', 'firewalla-quality', 'firewalla-readiness'])
+    args, remaining = parser.parse_known_args(argv)
+    if args.command == 'firewalla-gate':
+        from .firewalla_gate import main as helper_main
+        return helper_main(remaining)
+    if args.command == 'firewalla-quality':
+        from .firewalla_quality import main as helper_main
+        return helper_main(remaining)
+    if args.command == 'firewalla-readiness':
+        from .firewalla_readiness import main as helper_main
+        return helper_main(remaining)
+    if remaining:
+        parser.error('unrecognized arguments: ' + ' '.join(remaining))
     try:
         if not args.config:
             raise ConfigError('--config is required for ' + args.command)
