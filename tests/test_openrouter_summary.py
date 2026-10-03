@@ -209,3 +209,23 @@ def configured_adapter(*args, **kwargs):
     kwargs.setdefault('model', 'example/primary:free')
     kwargs.setdefault('providers', ('provider-a',))
     return adapter.OpenRouterSummary(*args, **kwargs)
+
+
+def test_custom_prompts_preserve_provider_policy_and_repair():
+    seen=[]
+    def transport(req,timeout):
+        seen.append(json.loads(req.data))
+        return response('bad' if len(seen)==1 else json.dumps(answer()))
+    callback=configured_adapter('secret',transport,system_prompt='DIRT custom prose',correction_prompt='DIRT correction')
+    assert callback(facts())==answer()
+    assert seen[0]['messages'][0]['content'].startswith('DIRT custom prose\nRequired JSON schema: ')
+    assert seen[1]['messages'][-1]['content']=='DIRT correction'
+    assert seen[0]['provider']==seen[1]['provider']
+    assert seen[0]['provider']['zdr'] is True
+
+
+def test_custom_prompts_reach_every_production_branch():
+    callback=adapter.production_summary('secret',summary_policy(),system_prompt='custom',correction_prompt='repair')
+    branches=(*callback._free._callbacks,callback._paid)
+    assert len(branches)==3
+    assert all(branch._system_prompt=='custom' and branch._correction_prompt=='repair' for branch in branches)

@@ -87,7 +87,9 @@ class NoRedirect(HTTPRedirectHandler):
         return None
 
 class OpenRouterSummary:
-    def __init__(self, api_key, transport=None, clock=time.monotonic, *, model, request_timeout=None, total_timeout=None, providers=None, max_price=None):
+    def __init__(self, api_key, transport=None, clock=time.monotonic, *, model, request_timeout=None, total_timeout=None, providers=None, max_price=None, system_prompt=None, correction_prompt=None):
+        self._system_prompt = SYSTEM_PROMPT if system_prompt is None else system_prompt
+        self._correction_prompt = correction_prompt
         self._api_key = api_key
         self._model = model
         self._providers = tuple(providers) if providers else ()
@@ -141,7 +143,7 @@ class OpenRouterSummary:
                    'reasoning': {'enabled': False},
                    'provider': {'sort': 'latency', 'zdr': True, 'data_collection': 'deny', 'require_parameters': True,
                                 'max_price': self._max_price},
-                   'messages': [{'role': 'system', 'content': SYSTEM_PROMPT + '\nRequired JSON schema: ' + json.dumps({'type': 'object', 'properties': properties, 'required': ['status', 'headline', 'explanation', 'what_changed', 'evidence_ids'], 'additionalProperties': False})}, {'role': 'user', 'content': json.dumps(facts, ensure_ascii=False)}]}
+                   'messages': [{'role': 'system', 'content': self._system_prompt + '\nRequired JSON schema: ' + json.dumps({'type': 'object', 'properties': properties, 'required': ['status', 'headline', 'explanation', 'what_changed', 'evidence_ids'], 'additionalProperties': False})}, {'role': 'user', 'content': json.dumps(facts, ensure_ascii=False)}]}
         if self._providers:
             payload['provider']['only'] = list(self._providers)
         deadline = self._clock() + self._total_timeout
@@ -175,7 +177,7 @@ class OpenRouterSummary:
                 return result
             if attempt == 0:
                 payload['messages'].append({'role': 'assistant', 'content': content[:MAX_RESPONSE] if isinstance(content, str) else ''})
-                payload['messages'].append({'role': 'user', 'content': (
+                payload['messages'].append({'role': 'user', 'content': self._correction_prompt if self._correction_prompt is not None else (
                     'Correct the discarded candidate against the original facts. Return JSON with matching status, '
                     'nonempty headline<=120 chars, explanation<=400 chars, what_changed<=250 chars, optional next_step<=200 chars; '
                     'Use original plain words; no visible standalone WAN, UPS, telemetry, collector, firing, resolved, '
@@ -265,10 +267,10 @@ class FallbackSummary:
             return self._paid(facts)
 
 
-def production_summary(api_key, policy):
+def production_summary(api_key, policy, *, system_prompt=None, correction_prompt=None):
     from .notifier_config import validate_summary_policy
     validate_summary_policy(policy)
-    branches = [OpenRouterSummary(api_key, **branch) for branch in policy['free']]
+    branches = [OpenRouterSummary(api_key, **branch, system_prompt=system_prompt, correction_prompt=correction_prompt) for branch in policy['free']]
     free = RacingSummary(*branches, hedge_delay=policy['hedge_delay'], total_timeout=policy['race_timeout'])
-    paid = OpenRouterSummary(api_key, **policy['paid'])
+    paid = OpenRouterSummary(api_key, **policy['paid'], system_prompt=system_prompt, correction_prompt=correction_prompt)
     return FallbackSummary(free, paid)
