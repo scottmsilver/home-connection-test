@@ -191,7 +191,7 @@ print(json.dumps(result))
 )
 
 
-def run(site, wan, run_id, emit, poll=15, *, before_arm=None):
+def run(site, wan, run_id, emit, poll=15, *, before_arm=None, before_inject=None):
     source = router_source(site)
 
     def router(action):
@@ -231,6 +231,8 @@ def run(site, wan, run_id, emit, poll=15, *, before_arm=None):
         # The local timer is armed and verified before any packet block is added.
         armed = True
         emit("armed", router("arm"))
+        if before_inject is not None:
+            before_inject()
         emit("injected", router("inject"))
         deadline = time.monotonic() + 780
         while time.monotonic() < deadline:

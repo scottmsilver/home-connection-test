@@ -925,3 +925,17 @@ def test_unhealthy_baseline_does_not_call_before_arm(monkeypatch):
     monkeypatch.setattr(m, "ssh", lambda *args: {})
     assert not m.run("third-site", "uplink-b", "a" * 32, lambda *args: None,
                      before_arm=lambda: pytest.fail("guard preceded baseline acceptance"))
+
+
+def test_before_inject_rejection_restores_armed_timer_without_inject(monkeypatch):
+    from connection_monitoring import dirt
+    actions=[]
+    monkeypatch.setattr(dirt,'SITES',{'third-site':{'primary':'uplink-a'}})
+    monkeypatch.setattr(dirt,'router_source',lambda site:'source')
+    def ssh(site,kind,source,args):
+        if kind=='monitor':return {'collector_active':True,'internet':True,'alert':{'state':'inactive','health':'ok'}}
+        actions.append(args[0]);return {'cleanup':True}
+    monkeypatch.setattr(dirt,'ssh',ssh)
+    def reject():raise HealthRejected('expired frozen health')
+    assert dirt.run('third-site','uplink-b','a'*32,lambda *args:None,before_inject=reject) is False
+    assert actions==['probe','arm','restore']
