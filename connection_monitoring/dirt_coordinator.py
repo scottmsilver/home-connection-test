@@ -694,6 +694,10 @@ class Coordinator:
 
         def emit(stage, data):
             nonlocal checks, interrupted, arm_gap
+            # The router is already armed. Establish the I/O barrier before even
+            # timestamp collection can fail and cause the engine to emit error.
+            if self.store.authoritative and stage == "armed":
+                arm_gap = True
             if (
                 stage == "error"
                 and type(data) is dict
@@ -749,8 +753,6 @@ class Coordinator:
                 if len(json.dumps(record, separators=(",", ":"))) > 8192:
                     record["observations"] = {}
                 if self.store.authoritative:
-                    if stage == "armed":
-                        arm_gap = True
                     # Engine emits these only after inject/restore has returned;
                     # error is deliberately buffered until cleanup or termination.
                     if stage in {"injected", "restored", "cleanup", "result"}:

@@ -1227,3 +1227,58 @@ def test_cloud_ambiguous_case_intent_commit_never_replays_engine(rig):
     assert fresh.watchdog("controller") == "inspected"
     assert fresh.scheduled("controller") == "already_completed"
     assert not rig[2]
+
+
+def test_actual_engine_armed_clock_failure_defers_cloud_io_until_restore(
+    rig, monkeypatch
+):
+    from connection_monitoring import dirt
+
+    c, store = cloud_coordinator(rig)
+    actions = []
+    gap = [False]
+    fail_clock = [False]
+    gap_calls = []
+    original_clock = c.clock
+
+    def clock():
+        if fail_clock[0]:
+            fail_clock[0] = False
+            raise OSError("transient clock failure during armed observation")
+        return original_clock()
+
+    def observe_store_call():
+        # Record attempts rather than throwing: emit deliberately catches errors.
+        if gap[0]:
+            gap_calls.append(tuple(actions))
+
+    def ssh(site, role, source, args=()):
+        if role == "monitor":
+            return dict(
+                internet=True,
+                collector_active=True,
+                alert=dict(state="inactive", health="ok"),
+            )
+        action = args[0]
+        actions.append(action)
+        if action == "arm":
+            assert len(store.state["cases"]) == 1
+            gap[0] = True
+            fail_clock[0] = True
+        elif action == "restore":
+            gap[0] = False
+        return {"cleanup": True}
+
+    c.clock = clock
+    store.on_call = observe_store_call
+    monkeypatch.setattr(dirt, "SITES", {"north": {"primary": "main"}})
+    monkeypatch.setattr(dirt, "router_source", lambda site: "fixture")
+    monkeypatch.setattr(dirt, "ssh", ssh)
+    c.run_case = lambda *args, **kwargs: dirt.run(*args, **kwargs, poll=0)
+
+    assert c.scheduled("controller") == "failed"
+    assert actions == ["probe", "arm", "restore"]
+    assert gap_calls == []
+    assert c.broken and len(store.state["cases"]) == 1
+    stages = next(iter(store.state["stages"].values()))
+    assert [s["stage"] for s in stages] == ["baseline", "error", "cleanup", "result"]
