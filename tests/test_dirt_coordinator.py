@@ -1,5 +1,6 @@
 import importlib
 from datetime import datetime, timezone
+from copy import deepcopy
 import pytest
 
 
@@ -993,3 +994,236 @@ def test_clock_adapter_failure_after_mutation_terminalizes_safely(rig):
     c.run_case = engine
     assert c.scheduled("controller") == "recovery_unverified"
     assert sent[-1]["facts"]["reason_codes"] == ["state_invalid"]
+
+
+def cloud_coordinator(rig, store=None):
+    from tests.test_dirt_ledger import MemoryLedger
+    from dataclasses import replace
+
+    c, now, calls, sent = rig
+    store = store or MemoryLedger()
+    # Existing non-directory makes every accidental local evidence/db write fail.
+    policy = replace(
+        c.policy,
+        db_path=c.policy.db_path + "/unused",
+        lock_path=c.policy.db_path + "/lock",
+        evidence_dir=c.policy.db_path + "/evidence",
+    )
+    fresh = module().Coordinator(
+        policy,
+        clock=c.clock,
+        health=c.health,
+        report=c.report,
+        run_case=c.run_case,
+        inspect=c.inspect,
+        store=store,
+    )
+    return fresh, store
+
+
+def test_explicit_store_is_lazy_and_fresh_coordinator_uses_durable_slot(rig):
+    c, store = cloud_coordinator(rig)
+    assert not store.calls and store.state["activation"] is None
+    store.retry = True
+    assert c.scheduled("controller") == "passed"
+    assert len(rig[2]) == 4  # callback retries never repeat external work
+    assert store.state["owner"] is None
+    other, _ = cloud_coordinator(rig, store)
+    assert other.scheduled("controller") == "already_completed"
+    assert len(rig[2]) == 4
+    assert len(store.state["inspections"]) == 4
+
+
+@pytest.mark.parametrize(
+    "selection,delay,result",
+    [([], 0, "unsupported"), (None, -2, "not_due"), (None, 601, "outside_window")],
+)
+def test_cloud_invalid_admission_never_claims_or_initializes(
+    rig, selection, delay, result
+):
+    c, store = cloud_coordinator(rig)
+    rig[1][0] += delay
+    assert c._start("controller", selection=selection) == result
+    assert not store.calls and store.state["owner"] is None and not store.state["runs"]
+
+
+def test_cloud_commit_failure_before_case_never_enters_engine(rig):
+    c, store = cloud_coordinator(rig)
+
+    def fail(state):
+        if state["cases"]:
+            raise OSError("case intent commit failed")
+
+    store.fail = fail
+    assert c.scheduled("controller") == "failed"
+    assert not rig[2] and not store.state["cases"]
+
+
+def test_cloud_claim_failure_leaves_no_activation_owner_slot_or_run(rig):
+    c, store = cloud_coordinator(rig)
+    store.fail = lambda state: (_ for _ in ()).throw(OSError("commit failed"))
+    with pytest.raises(OSError):
+        c.scheduled("controller")
+    assert (
+        store.state["activation"] is None
+        and store.state["owner"] is None
+        and not store.state["runs"]
+    )
+    assert not rig[2]
+
+
+def test_cloud_interrupted_intent_needs_terminal_execution_proof(rig):
+    c, store = cloud_coordinator(rig)
+    c.run_case = lambda *args, **kwargs: (_ for _ in ()).throw(SystemExit("hard kill"))
+    with pytest.raises(SystemExit):
+        c.scheduled("controller")
+    assert store.state["owner"] is not None
+    inspector, _ = cloud_coordinator(rig, store)
+    assert inspector.watchdog("controller") == "busy"
+    assert not rig[2]
+    store.terminal_proof = True
+    assert inspector.watchdog("controller") == "inspected"
+    assert store.state["owner"] is None
+    assert all(
+        c.outcome == "interrupted" and c.restored for c in store.state["cases"].values()
+    )
+    assert inspector.scheduled("controller") == "already_completed"
+
+
+@pytest.mark.parametrize("failure", [None, "armed_write", "guard"])
+def test_actual_engine_has_no_cloud_calls_between_arm_and_inject(
+    rig, monkeypatch, failure
+):
+    from connection_monitoring import dirt
+    import time
+
+    c, store = cloud_coordinator(rig)
+    gap = [False]
+    phase = ["baseline"]
+    actions = []
+    normal = {
+        "main": {"ready": True, "active": True},
+        "backup": {"ready": True, "active": False},
+    }
+
+    def call():
+        assert not gap[0], "remote ledger I/O inside verified arm-to-inject gap"
+
+    store.on_call = call
+    if failure == "armed_write":
+
+        def fail(state):
+            if any(
+                stage["stage"] == "armed"
+                for stages in state["stages"].values()
+                for stage in stages
+            ):
+                raise OSError("late stage write failed")
+
+        store.fail = fail
+
+    def ssh(site, role, source, args=()):
+        if role == "monitor":
+            return dict(
+                internet=True,
+                collector_active=True,
+                alert=dict(
+                    state="firing" if phase[0] == "fault" else "inactive", health="ok"
+                ),
+                delivery_history=dict(
+                    status="firing" if phase[0] == "fault" else "resolved",
+                    accepted=time.time() + 10,
+                ),
+            )
+        action = args[0]
+        actions.append(action)
+        if action == "arm":
+            assert store.state["cases"], "potential-arm intent must precede arm"
+            gap[0] = True
+            if failure == "guard":
+                rig[1][0] += 301
+        if action in ("inject", "restore"):
+            gap[0] = False
+        if action == "inject":
+            phase[0] = "fault"
+        if action == "restore":
+            phase[0] = "recovery"
+        wans = deepcopy(normal)
+        if phase[0] == "fault":
+            wans["backup"]["ready"] = False
+        return dict(fault_present=phase[0] == "fault", wans=wans, cleanup=True)
+
+    monkeypatch.setattr(dirt, "SITES", {"north": {"primary": "main"}})
+    monkeypatch.setattr(dirt, "router_source", lambda site: "fixture")
+    monkeypatch.setattr(dirt, "ssh", ssh)
+    c.run_case = lambda *args, **kwargs: dirt.run(*args, **kwargs, poll=0)
+    result = c.manual("controller", [("north", "backup")])
+    assert result == ("passed" if failure is None else "failed")
+    assert actions.count("arm") == 1 and "restore" in actions
+    if failure == "guard":
+        assert "inject" not in actions
+    else:
+        assert actions.index("arm") < actions.index("inject") < actions.index("restore")
+    if failure == "armed_write":
+        assert c.broken
+    else:
+        stages = next(iter(store.state["stages"].values()))
+        assert "armed" in [s["stage"] for s in stages]
+
+
+def test_cloud_late_receipt_write_failure_stops_before_next_case_intent(rig):
+    c, store = cloud_coordinator(rig)
+    failed = []
+
+    def fail(state):
+        if not failed and any(
+            e.payload["phase"] == "case_finished" and e.receipt is not None
+            for e in state["events"].values()
+        ):
+            failed.append(True)
+            raise OSError("terminal receipt commit failed")
+
+    store.fail = fail
+    assert c.scheduled("controller") == "failed"
+    assert len(store.state["cases"]) == 1
+    assert rig[2] == [("north", "backup")]
+    assert c.broken and store.state["owner"] is not None
+    # The successfully checked case result stays immutable; only the run fails.
+    assert next(iter(store.state["cases"].values())).outcome == "passed"
+
+
+def test_cloud_activation_mismatch_never_writes_or_faults(rig):
+    from dataclasses import replace
+
+    c, store = cloud_coordinator(rig)
+    assert c.scheduled("controller") == "passed"
+    state = deepcopy(store.state)
+    c.policy = replace(c.policy, activation=c.policy.activation + 1)
+    with pytest.raises(ValueError, match="activation"):
+        c.manual("controller")
+    assert store.state == state
+    assert len(rig[2]) == 4
+
+
+def test_cloud_ambiguous_case_intent_commit_never_replays_engine(rig):
+    c, store = cloud_coordinator(rig)
+    original = store.transact
+    ambiguous = []
+
+    def transact(callback, *, owner=None):
+        value = original(callback, owner=owner)
+        if store.state["cases"] and not ambiguous:
+            ambiguous.append(True)
+            raise OSError("committed but acknowledgment lost")
+        return value
+
+    store.transact = transact
+    assert c.scheduled("controller") == "failed"
+    assert not rig[2] and len(store.state["cases"]) == 1
+    fresh, _ = cloud_coordinator(rig, store)
+    assert fresh.scheduled("controller") == "busy"
+    assert fresh.watchdog("controller") == "busy"
+    store.terminal_proof = True
+    assert fresh.watchdog("controller") == "inspected"
+    assert fresh.scheduled("controller") == "already_completed"
+    assert not rig[2]

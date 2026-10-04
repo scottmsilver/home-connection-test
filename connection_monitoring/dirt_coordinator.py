@@ -6,14 +6,19 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 
-import fcntl
 import json
 import os
-import sqlite3
 import uuid
-from contextlib import contextmanager
 from copy import deepcopy
 from pathlib import Path
+from .dirt_ledger import (
+    SQLiteLedger,
+    RunRecord,
+    CaseRecord,
+    EventRecord,
+    InspectionRecord,
+    CaseTransition,
+)
 from .dirt_health import HealthRejected, require_healthy
 from .dirt_report import (
     make_event,
@@ -271,11 +276,13 @@ class Coordinator:
     cleanup on callback rejection. Adapters must bound health, reports, inspections,
     and engine calls within the declared whole-case budget; deployment must enforce
     a service deadline and independent router recovery timer. emit is deliberately
-    nonthrowing. Watchdog never
-    invokes run_case. Caller must use the SAME lock/database for every invocation.
+    nonthrowing. Watchdog never invokes run_case. Local callers must use the SAME
+    lock/database for every invocation. Explicit stores implement dirt_ledger.Ledger
+    and share one configured authority. Their admission and transactions must have
+    bounded deadlines; cloud authoritative storage never requires local files.
     """
 
-    def __init__(self, policy, *, clock, health, report, run_case, inspect):
+    def __init__(self, policy, *, clock, health, report, run_case, inspect, store=None):
         validate_policy(policy)
         self.policy = policy
         self.clock = clock
@@ -287,53 +294,33 @@ class Coordinator:
         self.last_clock = None
         self.clock_invalid = False
         self.health_issues = []
-        Path(policy.db_path).parent.mkdir(parents=True, exist_ok=True)
-        with self.db() as db:
-            db.executescript(
-                """CREATE TABLE IF NOT EXISTS config (key TEXT PRIMARY KEY,value TEXT);
-            CREATE TABLE IF NOT EXISTS runs (id TEXT PRIMARY KEY,slot REAL UNIQUE,outcome TEXT);
-            CREATE TABLE IF NOT EXISTS cases (id TEXT PRIMARY KEY,run TEXT,site TEXT,wan TEXT,router_id TEXT,outcome TEXT,restored INTEGER NOT NULL);
-            CREATE TABLE IF NOT EXISTS events (id TEXT PRIMARY KEY,payload TEXT NOT NULL,receipt TEXT);
-            CREATE TABLE IF NOT EXISTS inspections (id TEXT PRIMARY KEY,case_id TEXT,payload TEXT NOT NULL);
-            CREATE TABLE IF NOT EXISTS stages (case_id TEXT,sequence INTEGER,payload TEXT,PRIMARY KEY(case_id,sequence));"""
-            )
-            db.execute(
-                "INSERT OR IGNORE INTO config VALUES (?,?)",
-                ("activation", json.dumps(policy.activation)),
-            )
-            if (
-                json.loads(
-                    db.execute(
-                        "SELECT value FROM config WHERE key=?", ("activation",)
-                    ).fetchone()[0]
-                )
-                != policy.activation
-            ):
-                raise ValueError("activation differs from durable state")
+        self.owner = None
+        self.store = (
+            store
+            if store is not None
+            else SQLiteLedger(policy.db_path, policy.lock_path)
+        )
+        if store is None:
+            # Keep direct db() fixtures and supported local fault injection hooks.
+            self.store.connection = lambda: self.db()
+            self.transact(lambda tx: tx.activation(policy.activation, initialize=True))
 
-    @contextmanager
     def db(self):
-        db = sqlite3.connect(self.policy.db_path, timeout=1)
-        try:
-            db.execute("PRAGMA synchronous=FULL")
-            with db:
-                yield db
-        finally:
-            db.close()
+        """Legacy SQLite fixture access; explicit cloud stores expose no SQL."""
+        if not isinstance(self.store, SQLiteLedger):
+            raise TypeError("db() is available only for SQLite storage")
+        return self.store.db()
 
-    @contextmanager
     def lock(self):
-        Path(self.policy.lock_path).parent.mkdir(parents=True, exist_ok=True)
-        with open(self.policy.lock_path, "a") as handle:
-            try:
-                fcntl.flock(handle, fcntl.LOCK_EX | fcntl.LOCK_NB)
-            except BlockingIOError:
-                yield False
-                return
-            try:
-                yield True
-            finally:
-                fcntl.flock(handle, fcntl.LOCK_UN)
+        # Cloud lock() MUST be nonclaiming; claim_run owns admission atomically.
+        return self.store.lock()
+
+    def transact(self, callback):
+        try:
+            return self.store.transact(callback, owner=self.owner)
+        except Exception:
+            self.broken = True
+            raise
 
     def now(self):
         try:
@@ -488,6 +475,7 @@ class Coordinator:
         facts=None,
         revision=1,
         transition=None,
+        inspection=None,
     ):
         event = make_event(
             run_id=run,
@@ -520,31 +508,24 @@ class Coordinator:
             },
             revision=revision,
         )
-        payload = json.dumps(event, sort_keys=True, separators=(",", ":"))
-        with self.db() as db:
-            if transition is not None:
-                transition(db)
-            db.execute(
-                "INSERT INTO events VALUES (?,?,NULL)", (event["event_id"], payload)
+        record = EventRecord(event["event_id"], event)
+        if transition is None:
+            self.transact(lambda tx: tx.create_event(record))
+        else:
+            self.transact(
+                lambda tx: tx.transition_case_event(transition, record, inspection)
             )
         return event, self.dispatch(event)
 
     def dispatch(self, event):
         try:
-            with self.db() as db:
-                row = db.execute(
-                    "SELECT receipt FROM events WHERE id=?", (event["event_id"],)
-                ).fetchone()
-            if row and row[0]:
-                return json.loads(row[0])
+            record = self.transact(lambda tx: tx.get_event(event["event_id"]))
+            if record and record.receipt:
+                return record.receipt
             receipt = self.report(deepcopy(event))
             if not validate_receipt(receipt, event):
                 return None
-            with self.db() as db:
-                db.execute(
-                    "UPDATE events SET receipt=? WHERE id=?",
-                    (json.dumps(receipt), event["event_id"]),
-                )
+            self.transact(lambda tx: tx.set_receipt(event["event_id"], receipt))
             return receipt
         except Exception:
             return None
@@ -582,21 +563,13 @@ class Coordinator:
                 return "not_due"
             if not manual and now - slot > p.start_grace:
                 return "outside_window"
-            with self.db() as db:
-                if db.execute("SELECT 1 FROM cases WHERE restored=0").fetchone():
-                    return "recovery_unverified"
-                if (
-                    not manual
-                    and db.execute(
-                        "SELECT 1 FROM runs WHERE slot=?", (slot,)
-                    ).fetchone()
-                ):
-                    return "already_completed"
-                rid = uuid.uuid4().hex
-                db.execute(
-                    "INSERT INTO runs VALUES (?,?,?)",
-                    (rid, None if manual else slot, "running"),
-                )
+            rid = uuid.uuid4().hex
+            admission = self.store.claim_run(
+                p.activation, RunRecord(rid, None if manual else slot, "running")
+            )
+            if admission.status != "claimed":
+                return admission.status
+            self.owner = admission.owner
             outcome = "skipped"
             summaries = []
             reason = "preflight_failed"
@@ -631,6 +604,10 @@ class Coordinator:
                         rid, site, wan, slot, start, receipt, hostname
                     )
                     summaries.append(summary)
+                    if self.broken and case_out == "passed":
+                        outcome = "failed"
+                        reason = "state_invalid"
+                        break
                     if case_out != "passed":
                         outcome = case_out
                         reason = summary["reason_codes"][0]
@@ -644,8 +621,7 @@ class Coordinator:
             except Exception:
                 reason = "state_invalid"
                 outcome = "failed"
-            with self.db() as db:
-                db.execute("UPDATE runs SET outcome=? WHERE id=?", (outcome, rid))
+            self.transact(lambda tx: tx.finish_run(rid, outcome))
             final_facts = {
                 "reason_codes": ["checks_passed" if outcome == "passed" else reason],
                 "elapsed_seconds": max(0, self.terminal_time() - now),
@@ -660,6 +636,8 @@ class Coordinator:
                 outcome,
                 facts=final_facts,
             )
+            if not self.broken:
+                self.store.release_if_resolved(self.owner)
             return outcome
 
     def fresh(self, event, receipt):
@@ -698,16 +676,24 @@ class Coordinator:
             announcement, receipt
         ):
             raise CoordinatorRejected("announcement_failed")
-        with self.db() as db:
-            db.execute(
-                "INSERT INTO cases VALUES (?,?,?,?,?,?,0)",
-                (cid, rid, site, wan, router_id, "running"),
-            )
+        intent = CaseRecord(cid, rid, site, wan, router_id, "running", False)
+        self.transact(lambda tx: tx.create_case(intent))
 
         interrupted = False
+        buffered = []
+        arm_gap = False
+
+        def flush():
+            # Nonthrowing, including when invoked from the engine cleanup path.
+            while buffered:
+                record = buffered.pop(0)
+                try:
+                    self.persist_stage(cid, record)
+                except Exception:
+                    self.broken = True
 
         def emit(stage, data):
-            nonlocal checks, interrupted
+            nonlocal checks, interrupted, arm_gap
             if (
                 stage == "error"
                 and type(data) is dict
@@ -762,32 +748,20 @@ class Coordinator:
                 }
                 if len(json.dumps(record, separators=(",", ":"))) > 8192:
                     record["observations"] = {}
-                with self.db() as db:
-                    seq = db.execute(
-                        "SELECT count(*) FROM stages WHERE case_id=?", (cid,)
-                    ).fetchone()[0]
-                    if seq >= 256:
-                        raise ValueError("stage evidence limit exceeded")
-                    db.execute(
-                        "INSERT INTO stages VALUES (?,?,?)",
-                        (cid, seq, json.dumps(record)),
-                    )
-                path = Path(p.evidence_dir) / cid
-                path.mkdir(parents=True, exist_ok=True)
-                parent_fd = os.open(str(path.parent), os.O_RDONLY)
-                try:
-                    os.fsync(parent_fd)
-                finally:
-                    os.close(parent_fd)
-                with open(path / ("%06d.jsonl" % seq), "x") as out:
-                    out.write(json.dumps(record, sort_keys=True) + "\n")
-                    out.flush()
-                    os.fsync(out.fileno())
-                fd = os.open(str(path), os.O_RDONLY)
-                try:
-                    os.fsync(fd)
-                finally:
-                    os.close(fd)
+                if self.store.authoritative:
+                    if stage == "armed":
+                        arm_gap = True
+                    # Engine emits these only after inject/restore has returned;
+                    # error is deliberately buffered until cleanup or termination.
+                    if stage in {"injected", "restored", "cleanup", "result"}:
+                        arm_gap = False
+                    if len(buffered) >= 256:
+                        raise ValueError("buffered stage evidence limit exceeded")
+                    buffered.append(record)
+                    if not arm_gap:
+                        flush()
+                else:
+                    self.persist_stage(cid, record)
             except Exception:
                 self.broken = True
 
@@ -836,6 +810,8 @@ class Coordinator:
             interrupted = True
         except Exception:
             passed = False
+        finally:
+            flush()
         try:
             clean, proof = self.inspection(site, wan, router_id)
         except Exception:
@@ -863,12 +839,8 @@ class Coordinator:
         if not clean and not interrupted:
             outcome = "recovery_unverified"
 
-        def terminal_transition(db):
-            db.execute(
-                "UPDATE cases SET outcome=?,restored=? WHERE id=?",
-                (outcome, int(clean), cid),
-            )
-            self.persist_inspection(db, cid, proof)
+        transition = CaseTransition(intent, outcome, clean)
+        inspection = InspectionRecord(uuid.uuid4().hex, cid, proof)
 
         facts = {
             "connection": wan,
@@ -911,7 +883,8 @@ class Coordinator:
             case=cid,
             site=site,
             facts=facts,
-            transition=terminal_transition,
+            transition=transition,
+            inspection=inspection,
         )
         return outcome, dict(
             name=cid,
@@ -959,11 +932,26 @@ class Coordinator:
             proof["status"] = "unknown"
         return clean, proof
 
-    def persist_inspection(self, db, cid, proof):
-        db.execute(
-            "INSERT INTO inspections VALUES (?,?,?)",
-            (uuid.uuid4().hex, cid, json.dumps(proof, sort_keys=True)),
-        )
+    def persist_stage(self, cid, record):
+        seq = self.transact(lambda tx: tx.append_stage(cid, record))
+        if self.store.authoritative:
+            return
+        path = Path(self.policy.evidence_dir) / cid
+        path.mkdir(parents=True, exist_ok=True)
+        parent_fd = os.open(str(path.parent), os.O_RDONLY)
+        try:
+            os.fsync(parent_fd)
+        finally:
+            os.close(parent_fd)
+        with open(path / ("%06d.jsonl" % seq), "x") as out:
+            out.write(json.dumps(record, sort_keys=True) + "\n")
+            out.flush()
+            os.fsync(out.fileno())
+        fd = os.open(str(path), os.O_RDONLY)
+        try:
+            os.fsync(fd)
+        finally:
+            os.close(fd)
 
     def watchdog(self, hostname):
         if hostname != self.policy.authority:
@@ -971,11 +959,20 @@ class Coordinator:
         with self.lock() as acquired:
             if not acquired:
                 return "busy"
-            with self.db() as db:
-                cases = db.execute(
-                    "SELECT id,run,site,wan,router_id,outcome FROM cases WHERE restored=0"
-                ).fetchall()
-            for cid, rid, site, wan, router_id, outcome in cases:
+            admission = self.store.claim_inspection(self.policy.activation)
+            if admission.status != "claimed":
+                return admission.status
+            self.owner = admission.owner
+            cases = self.transact(lambda tx: tx.cases(unresolved=True))
+            for case in cases:
+                cid, rid, site, wan, router_id, outcome = (
+                    case.id,
+                    case.run,
+                    case.site,
+                    case.wan,
+                    case.router_id,
+                    case.outcome,
+                )
                 known = any(
                     s.name == site and wan in (s.standby, s.primary)
                     for s in self.policy.sites
@@ -991,17 +988,17 @@ class Coordinator:
                     proof = {"valid": False, "status": "unknown"}
                 if outcome == "running":
                     outcome = "interrupted"
-                    with self.db() as db:
-                        db.execute(
-                            "UPDATE cases SET outcome=? WHERE id=?", (outcome, cid)
-                        )
-                    self.event(rid, "interrupted", outcome, case=cid, site=site)
+                    self.event(
+                        rid,
+                        "interrupted",
+                        outcome,
+                        case=cid,
+                        site=site,
+                        transition=CaseTransition(case, outcome, False),
+                    )
+                    case = CaseRecord(cid, rid, site, wan, router_id, outcome, False)
+                inspection = InspectionRecord(uuid.uuid4().hex, cid, proof)
                 if clean:
-
-                    def recovery_transition(db):
-                        db.execute("UPDATE cases SET restored=1 WHERE id=?", (cid,))
-                        self.persist_inspection(db, cid, proof)
-
                     self.event(
                         rid,
                         "recovery_update",
@@ -1009,38 +1006,33 @@ class Coordinator:
                         case=cid,
                         site=site,
                         facts={"restoration": {"restoration": True}},
-                        transition=recovery_transition,
+                        transition=CaseTransition(case, outcome, True),
+                        inspection=inspection,
                     )
                 else:
-                    with self.db() as db:
-                        self.persist_inspection(db, cid, proof)
-            with self.db() as db:
-                running = db.execute(
-                    "SELECT id FROM runs WHERE outcome='running'"
-                ).fetchall()
-            for (rid,) in running:
-                with self.db() as db:
-                    db.execute(
-                        "UPDATE runs SET outcome=? WHERE id=?", ("interrupted", rid)
+                    self.transact(lambda tx: tx.append_inspection(inspection))
+            running = self.transact(lambda tx: tx.runs(running=True))
+            for run in running:
+                self.transact(lambda tx: tx.finish_run(run.id, "interrupted"))
+            terminal_cases = self.transact(lambda tx: tx.cases(terminal=True))
+            for case in terminal_cases:
+                cid, rid, site, wan, outcome, clean = (
+                    case.id,
+                    case.run,
+                    case.site,
+                    case.wan,
+                    case.outcome,
+                    case.restored,
+                )
+                existing, rows = self.transact(
+                    lambda tx: (
+                        tx.get_event(event_id(rid, cid, "case_finished", 1)),
+                        tx.stages(cid),
                     )
-            with self.db() as db:
-                terminal_cases = db.execute(
-                    "SELECT id,run,site,wan,outcome,restored FROM cases WHERE outcome!='running'"
-                ).fetchall()
-            for cid, rid, site, wan, outcome, clean in terminal_cases:
-                with self.db() as db:
-                    existing = db.execute(
-                        "SELECT 1 FROM events WHERE id=?",
-                        (event_id(rid, cid, "case_finished", 1),),
-                    ).fetchone()
-                    rows = db.execute(
-                        "SELECT payload FROM stages WHERE case_id=? ORDER BY sequence",
-                        (cid,),
-                    ).fetchall()
+                )
                 if not existing:
                     checks = {}
-                    for (payload,) in rows:
-                        stage = json.loads(payload)
+                    for stage in rows:
                         if stage["stage"] == "result":
                             checks = stage["checks"]
                     self.event(
@@ -1056,28 +1048,21 @@ class Coordinator:
                         },
                     )
             # Reconcile terminal intent gaps, including loss before case intent.
-            with self.db() as db:
-                allruns = db.execute(
-                    "SELECT id,outcome FROM runs WHERE outcome!='running'"
-                ).fetchall()
-            for rid, outcome in allruns:
-                phase = "skipped" if outcome == "skipped" else "finished"
-                with self.db() as db:
-                    existing = db.execute(
-                        "SELECT payload FROM events WHERE id=?",
-                        (event_id(rid, None, phase, 1),),
-                    ).fetchone()
+            allruns = self.transact(lambda tx: tx.runs(terminal=True))
+            for run in allruns:
+                phase = "skipped" if run.outcome == "skipped" else "finished"
+                existing = self.transact(
+                    lambda tx: tx.get_event(event_id(run.id, None, phase, 1))
+                )
                 if not existing:
-                    self.event(rid, phase, outcome)
+                    self.event(run.id, phase, run.outcome)
             self.missed()
-            with self.db() as db:
-                events = db.execute(
-                    "SELECT payload FROM events WHERE receipt IS NULL"
-                ).fetchall()
-            for (payload,) in events:
-                event = json.loads(payload)
-                if event["phase"] not in ("starting", "case_starting"):
-                    self.dispatch(event)
+            events = self.transact(lambda tx: tx.pending_events())
+            for record in events:
+                if record.payload["phase"] not in ("starting", "case_starting"):
+                    self.dispatch(record.payload)
+            if not self.broken:
+                self.store.release_if_resolved(self.owner)
             return "inspected"
 
     def missed(self):
@@ -1089,16 +1074,15 @@ class Coordinator:
         while (year, month) <= (end.year, end.month):
             slot = month_slot(p, year, month)
             if slot is not None and p.activation <= slot and slot + p.start_grace < now:
-                with self.db() as db:
-                    exists = db.execute(
-                        "SELECT 1 FROM runs WHERE slot=?", (slot,)
-                    ).fetchone()
-                    if not exists:
-                        rid = uuid.uuid4().hex
-                        db.execute(
-                            "INSERT INTO runs VALUES (?,?,?)", (rid, slot, "skipped")
-                        )
-                if not exists:
+                rid = uuid.uuid4().hex
+
+                def record_missed(tx):
+                    if tx.find_run(slot):
+                        return False
+                    tx.create_run(RunRecord(rid, slot, "skipped"))
+                    return True
+
+                if self.transact(record_missed):
                     self.event(
                         rid,
                         "skipped",
