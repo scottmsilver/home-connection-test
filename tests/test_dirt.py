@@ -304,6 +304,17 @@ def router_harness(monkeypatch, tmp_path):
     def cmd(args, check=True):
         log.append(args)
         stdout = ""
+        if args[0] == "busctl":
+            import json, time
+            prop = args[-1]
+            service = "sample-drill-" + "a" * 32 + ".service"
+            argv = ["/usr/bin/python3", str(tmp_path / ("a" * 32 + ".py")), "restore",
+                    "--site", "third-site", "--wan", "uplink-b", "--run", "a" * 32, "--ttl", "900"]
+            values = {"ActiveState": ("s", "active"), "Unit": ("s", service),
+                "TimersMonotonic": ("a(stt)", [["OnActiveUSec", 900000000, int((time.monotonic()+900)*1000000)]]),
+                "ExecStart": ("a(sasbttttuii)", [[argv[0], argv, False, 0, 0, 0, 0, 0, 0, 0]])}
+            kind, data = values[prop]
+            stdout = json.dumps({"type": kind, "data": data})
         if args[0] in rules:
             binary = args[0]
             parts = args[3:]
@@ -581,6 +592,139 @@ def test_unknown_firewall_inspection_retains_recovery_resources(
         m.STATE / ("a" * 32 + ".py")
     ).exists()
     assert not any(c[:2] == ["systemctl", "stop"] for c in log)
+
+
+def test_readonly_existing_lock_still_attempts_firewall_recovery(router_harness, monkeypatch):
+    import errno
+
+    m, log, rules, cmd, invoke = router_harness
+    invoke("arm")
+    invoke("inject")
+    foreign = ["-A", "OUTPUT", "-o", "eth0", "-j", "ACCEPT"]
+    rules["iptables"].append(foreign)
+    original_open, original_unlink = Path.open, Path.unlink
+
+    def readonly_open(path, mode="r", *args, **kwargs):
+        if path.is_relative_to(m.STATE) and any(flag in mode for flag in "wax+"):
+            raise OSError(errno.EROFS, "read-only simulation")
+        return original_open(path, mode, *args, **kwargs)
+
+    def readonly_unlink(path, *args, **kwargs):
+        if path.is_relative_to(m.STATE):
+            raise OSError(errno.EROFS, "read-only simulation")
+        return original_unlink(path, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "open", readonly_open)
+    monkeypatch.setattr(Path, "unlink", readonly_unlink)
+    log.clear()
+    with pytest.raises(OSError):
+        invoke("restore")
+    assert rules == {"iptables": [foreign], "ip6tables": []}
+    assert (m.STATE / "active.json").exists()
+    assert (m.STATE / ("a" * 32 + ".py")).exists()
+    assert not any(c[:2] == ["systemctl", "stop"] for c in log)
+
+def test_helper_removal_failure_keeps_timer_for_retry(router_harness, monkeypatch):
+    import errno
+
+    m, log, rules, cmd, invoke = router_harness
+    invoke("arm")
+    invoke("inject")
+    original = Path.unlink
+    def fail_helper(path, *args, **kwargs):
+        if path.suffix == ".py":
+            raise OSError(errno.EROFS, "read-only simulation")
+        return original(path, *args, **kwargs)
+    monkeypatch.setattr(Path, "unlink", fail_helper)
+    log.clear()
+    with pytest.raises(OSError):
+        invoke("restore")
+    assert rules == {"iptables": [], "ip6tables": []}
+    assert (m.STATE / ("a" * 32 + ".py")).exists()
+    assert (m.STATE / "active.json").exists()
+    assert not any(c[:2] == ["systemctl", "stop"] for c in log)
+
+
+@pytest.mark.parametrize("property", ["ActiveState", "Unit", "TimersMonotonic", "ExecStart"])
+def test_injection_requires_owned_live_timer(router_harness, monkeypatch, property):
+    import json, subprocess
+    m, log, rules, cmd, invoke = router_harness
+    invoke("arm")
+    def wrong_timer(args, check=True):
+        if args[0] == "busctl" and args[-1] == property:
+            return subprocess.CompletedProcess(args, 0, json.dumps({"type": "s", "data": "foreign"}), "")
+        return cmd(args, check)
+    monkeypatch.setattr(m, "command", wrong_timer)
+    with pytest.raises(ValueError):
+        invoke("inject")
+    assert rules == {"iptables": [], "ip6tables": []}
+
+
+@pytest.mark.parametrize("change", [{"ttl": 1200}, {"armed_at": 0}, {"armed_at": 999999999999}])
+def test_injection_rejects_changed_or_expired_marker(router_harness, change):
+    import json
+    m, log, rules, cmd, invoke = router_harness
+    invoke("arm")
+    marker = m.STATE / "active.json"
+    marker.write_text(json.dumps(dict(json.loads(marker.read_text()), **change)))
+    with pytest.raises(ValueError):
+        invoke("inject")
+    assert rules == {"iptables": [], "ip6tables": []}
+
+
+def test_duplicate_arm_cannot_extend_deadline(router_harness):
+    m, log, rules, cmd, invoke = router_harness
+    invoke("arm")
+    original = (m.STATE / "active.json").read_bytes()
+    with pytest.raises(ValueError):
+        invoke("arm")
+    assert sum(c[0] == "systemd-run" for c in log) == 1
+    assert (m.STATE / "active.json").read_bytes() == original
+
+
+def test_timer_stop_failure_retains_recovery_and_never_reports_cleanup(router_harness, monkeypatch):
+    import subprocess
+    m, log, rules, cmd, invoke = router_harness
+    invoke("arm"); invoke("inject")
+    original = (m.STATE / ("a"*32+".py")).read_bytes()
+    def failed_stop(args, check=True):
+        if args[:2] == ['systemctl','stop']:
+            return subprocess.CompletedProcess(args,1,'','')
+        return cmd(args,check)
+    monkeypatch.setattr(m,'command',failed_stop)
+    with pytest.raises(ValueError): invoke("restore")
+    assert rules == {"iptables":[],"ip6tables":[]}
+    assert (m.STATE / ("a"*32+".py")).read_bytes() == original
+
+
+@pytest.mark.parametrize('mutation', ['missing','inactive','expired','mismatched'])
+def test_inject_never_mutates_without_matching_recovery(router_harness, monkeypatch, mutation):
+    import json, subprocess
+    m, log, rules, cmd, invoke = router_harness
+    invoke('arm')
+    marker=m.STATE/'active.json'
+    if mutation=='missing': marker.unlink()
+    elif mutation=='mismatched': marker.write_text(json.dumps(dict(json.loads(marker.read_text()),run='b'*32)))
+    else:
+        def unavailable(args,check=True):
+            if args[0]=='busctl' and args[-1]=='TimersMonotonic':
+                return subprocess.CompletedProcess(args,0,json.dumps({'type':'a(stt)','data':[['OnActiveUSec',900000000,0]]}),'')
+            if mutation=='inactive' and args[:2]==['systemctl','is-active']: raise ValueError('inactive')
+            return cmd(args,check)
+        monkeypatch.setattr(m,'command',unavailable)
+    with pytest.raises(ValueError): invoke('inject')
+    assert rules == {"iptables":[],"ip6tables":[]}
+
+
+@pytest.mark.parametrize('change',['missing','changed'])
+def test_inject_requires_original_standalone_helper(router_harness,change):
+    m, log, rules, cmd, invoke = router_harness
+    invoke('arm')
+    helper=m.STATE/('a'*32+'.py')
+    if change=='missing': helper.unlink()
+    else: helper.write_text('raise SystemExit(0)\n')
+    with pytest.raises(ValueError): invoke('inject')
+    assert rules == {"iptables":[],"ip6tables":[]}
 
 
 def test_saved_recovery_runs_without_package_config_or_zipapp(router_harness, tmp_path):

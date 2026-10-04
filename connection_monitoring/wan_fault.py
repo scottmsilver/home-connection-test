@@ -284,6 +284,58 @@ def snapshot(site):
     }
 
 
+def recovery_argv(site, wan, run, ttl):
+    return ["/usr/bin/python3", str(STATE / (run + ".py")), "restore",
+            "--site", site, "--wan", wan, "--run", run, "--ttl", str(ttl)]
+
+
+def recovery_source(site):
+    source = globals().get("RECOVERY_SOURCE")
+    if not source:
+        raise ValueError("Recovery helper source unavailable")
+    embedded = {site: {k: SITES[site][k] for k in
+        ("primary", "wans", "management_interface", "state_dir", "timer_prefix")}}
+    return "EMBEDDED_SITE = " + repr(embedded) + "\n" + source
+
+
+def timer_property(unit, interface, name):
+    # D-Bus JSON preserves integer microseconds and the actual ExecStart argv;
+    # human-readable systemctl output is not a stable timer proof.
+    path = "/org/freedesktop/systemd1/unit/" + "".join(
+        c if c.isascii() and c.isalnum() else "_" + format(ord(c), "02x") for c in unit)
+    raw = command(["busctl", "--json=short", "get-property", "org.freedesktop.systemd1",
+                   path, "org.freedesktop.systemd1." + interface, name]).stdout
+    if len(raw) > 65536:
+        raise ValueError("Recovery timer proof too large")
+    value = json.loads(raw)
+    return value["data"]
+
+
+def verify_timer(site, wan, run, ttl):
+    timer = SITES[site]["timer_prefix"] + run + ".timer"
+    service = SITES[site]["timer_prefix"] + run + ".service"
+    try:
+        helper = STATE / (run + ".py")
+        expected = recovery_source(site)
+        if not helper.is_file() or helper.stat().st_size != len(expected.encode()) or helper.read_text() != expected:
+            raise ValueError()
+        if (timer_property(timer, "Unit", "ActiveState") != "active" or
+                timer_property(timer, "Timer", "Unit") != service):
+            raise ValueError()
+        timers = timer_property(timer, "Timer", "TimersMonotonic")
+        if (type(timers) is not list or len(timers) != 1 or len(timers[0]) != 3 or
+                timers[0][0] != "OnActiveUSec" or type(timers[0][1]) is not int or
+                timers[0][1] != ttl * 1000000 or type(timers[0][2]) is not int or
+                not time.monotonic() * 1000000 < timers[0][2] <= (time.monotonic() + ttl + 2) * 1000000):
+            raise ValueError()
+        commands = timer_property(service, "Service", "ExecStart")
+        if (type(commands) is not list or len(commands) != 1 or len(commands[0]) != 10 or
+                commands[0][:3] != ["/usr/bin/python3", recovery_argv(site, wan, run, ttl), False]):
+            raise ValueError()
+    except (KeyError, IndexError, TypeError, ValueError, OSError):
+        raise ValueError("Owned recovery timer could not be verified") from None
+
+
 def restore(site, wan, run):
     interface = SITES[site]["wans"][wan]["interface"]
     for args in restore_commands(interface, run):
@@ -291,14 +343,35 @@ def restore(site, wan, run):
     clean = firewall_clean(interface, run)
     if clean:
         marker = STATE / "active.json"
-        if marker.exists() and json.loads(marker.read_text()).get("run") == run:
-            marker.unlink()
-        command(
-            ["systemctl", "stop", SITES[site]["timer_prefix"] + run + ".timer"], False
-        )
         helper = STATE / (run + ".py")
-        if helper.exists():
-            helper.unlink()
+        saved_helper = helper.read_bytes() if helper.exists() else None
+        saved_marker = None
+        if marker.exists() and json.loads(marker.read_text()).get("run") == run:
+            saved_marker = marker.read_bytes()
+        try:
+            if saved_marker is not None:
+                marker.unlink()
+            if saved_helper is not None:
+                helper.unlink()
+            stopped = command(
+                ["systemctl", "stop", SITES[site]["timer_prefix"] + run + ".timer"], False
+            )
+            if stopped.returncode:
+                raise ValueError("Recovery timer cancellation uncertain")
+        except BaseException:
+            # Never re-arm or extend the timer. Preserve its original standalone
+            # recovery input if cancellation failed, without replacing any file.
+            for path, data in ((helper, saved_helper), (marker, saved_marker)):
+                if data is not None:
+                    try:
+                        fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+                        with os.fdopen(fd, "wb") as stream:
+                            stream.write(data)
+                            stream.flush()
+                            os.fsync(stream.fileno())
+                    except FileExistsError:
+                        pass
+            raise
     if not clean:
         raise ValueError("Owned firewall rules could not all be removed")
     return {"cleanup": True}
@@ -327,7 +400,14 @@ def main(config=None):
     if os.geteuid() != 0:
         raise ValueError("Router-local root required")
     STATE.mkdir(mode=0o700, exist_ok=True)
-    with (STATE / "lock").open("a") as lock:
+    # flock works on a read-only descriptor on the router's local filesystem.
+    # Recovery must not need a writable mount merely to lock existing state.
+    lock_path = STATE / "lock"
+    try:
+        lock = lock_path.open("r" if a.action == "restore" else "a")
+    except FileNotFoundError:
+        lock = lock_path.open("a")
+    with lock:
         fcntl.flock(lock, fcntl.LOCK_EX)
         interface = SITES[a.site]["wans"][a.wan]["interface"]
         marker = STATE / "active.json"
@@ -347,22 +427,7 @@ def main(config=None):
                 if any(chain(a.run) in rule for rule in firewall_rules(binary)):
                     raise ValueError("Owned chain collision")
             helper = STATE / (a.run + ".py")
-            source = globals().get("RECOVERY_SOURCE")
-            if not source:
-                raise ValueError("Recovery helper source unavailable")
-            embedded = {
-                a.site: {
-                    k: SITES[a.site][k]
-                    for k in (
-                        "primary",
-                        "wans",
-                        "management_interface",
-                        "state_dir",
-                        "timer_prefix",
-                    )
-                }
-            }
-            saved = "EMBEDDED_SITE = " + repr(embedded) + "\n" + source
+            saved = recovery_source(a.site)
             fd = os.open(str(helper), os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
             with os.fdopen(fd, "w") as out:
                 out.write(saved)
@@ -397,6 +462,7 @@ def main(config=None):
                     SITES[a.site]["timer_prefix"] + a.run + ".timer",
                 ]
             )
+            verify_timer(a.site, a.wan, a.run, a.ttl)
             marker.write_text(
                 json.dumps(
                     {
@@ -418,7 +484,7 @@ def main(config=None):
                 a.run,
                 a.site,
                 a.wan,
-            ) or time.time() > saved["armed_at"] + 30:
+            ) or saved.get("ttl") != a.ttl or not 0 <= time.time() - saved["armed_at"] <= 30:
                 raise ValueError("Recovery arm expired or mismatched")
             command(
                 [
@@ -427,6 +493,7 @@ def main(config=None):
                     SITES[a.site]["timer_prefix"] + a.run + ".timer",
                 ]
             )
+            verify_timer(a.site, a.wan, a.run, a.ttl)
             check_baseline(network_info(), a.wan, management_interface(), a.site)
             try:
                 for args in fault_commands(interface, a.run):
