@@ -281,6 +281,7 @@ def router_harness(monkeypatch, tmp_path):
     m = load("wan_fault")
     log = []
     rules = {"iptables": [], "ip6tables": []}
+    deadline = None
     cfg = m.SITES["third-site"]
     info = {
         w["interface"]: {
@@ -302,16 +303,19 @@ def router_harness(monkeypatch, tmp_path):
     )
 
     def cmd(args, check=True):
+        nonlocal deadline
         log.append(args)
         stdout = ""
+        if args[0] == "systemd-run":
+            deadline = int((m.time.monotonic() + 900) * 1000000)
         if args[0] == "busctl":
-            import json, time
+            import json
             prop = args[-1]
             service = "sample-drill-" + "a" * 32 + ".service"
             argv = ["/usr/bin/python3", str(tmp_path / ("a" * 32 + ".py")), "restore",
                     "--site", "third-site", "--wan", "uplink-b", "--run", "a" * 32, "--ttl", "900"]
             values = {"ActiveState": ("s", "active"), "Unit": ("s", service),
-                "TimersMonotonic": ("a(stt)", [["OnActiveUSec", 900000000, int((time.monotonic()+900)*1000000)]]),
+                "TimersMonotonic": ("a(stt)", [["OnActiveUSec", 900000000, deadline]]),
                 "ExecStart": ("a(sasbttttuii)", [[argv[0], argv, False, 0, 0, 0, 0, 0, 0, 0]])}
             kind, data = values[prop]
             stdout = json.dumps({"type": kind, "data": data})
@@ -672,14 +676,100 @@ def test_injection_rejects_changed_or_expired_marker(router_harness, change):
     assert rules == {"iptables": [], "ip6tables": []}
 
 
-def test_duplicate_arm_cannot_extend_deadline(router_harness):
+@pytest.fixture
+def router_clock(router_harness, monkeypatch):
+    from types import SimpleNamespace
+
+    m, _, _, _, _ = router_harness
+    clock = [100.0]
+    monkeypatch.setattr(m, "time", SimpleNamespace(
+        monotonic=lambda: clock[0], time=lambda: clock[0] + 900))
+    return clock
+
+
+def test_arm_records_original_verified_monotonic_deadline(router_harness, router_clock):
+    import json
+
+    m, _, _, _, invoke = router_harness
+    invoke("arm")
+    saved = json.loads((m.STATE / "active.json").read_text())
+    assert type(saved["deadline_monotonic_usec"]) is int
+    assert saved["deadline_monotonic_usec"] == 1000000000
+
+
+@pytest.mark.parametrize("drift_usec", [-10000000, 10000000])
+def test_inject_rejects_original_deadline_drift_before_firewall_mutation(
+    router_harness, router_clock, monkeypatch, drift_usec
+):
+    import json
+
+    m, log, rules, cmd, invoke = router_harness
+    invoke("arm")
+    router_clock[0] += 10
+
+    def drifted(args, check=True):
+        result = cmd(args, check)
+        if args[0] == "busctl" and args[-1] == "TimersMonotonic":
+            proof = json.loads(result.stdout)
+            proof["data"][0][2] += drift_usec
+            result.stdout = json.dumps(proof)
+        return result
+
+    monkeypatch.setattr(m, "command", drifted)
+    log.clear()
+    with pytest.raises(ValueError):
+        invoke("inject")
+    assert not any(c[0] in rules for c in log)
+    assert rules == {"iptables": [], "ip6tables": []}
+    assert (m.STATE / "active.json").exists()
+    assert (m.STATE / ("a" * 32 + ".py")).exists()
+
+
+@pytest.mark.parametrize("deadline", [None, True, 1000000000.0, "1000000000"])
+def test_inject_requires_typed_original_deadline(router_harness, router_clock, deadline):
+    import json
+
+    m, log, rules, _, invoke = router_harness
+    invoke("arm")
+    marker = m.STATE / "active.json"
+    saved = json.loads(marker.read_text())
+    saved["deadline_monotonic_usec"] = deadline
+    if deadline is None:
+        del saved["deadline_monotonic_usec"]
+    marker.write_text(json.dumps(saved))
+    log.clear()
+    with pytest.raises(ValueError):
+        invoke("inject")
+    assert not any(c[0] in rules for c in log)
+    assert rules == {"iptables": [], "ip6tables": []}
+
+
+def test_inject_keeps_original_deadline_after_time_advances(router_harness, router_clock):
+    import json
+
     m, log, rules, cmd, invoke = router_harness
     invoke("arm")
     original = (m.STATE / "active.json").read_bytes()
+    router_clock[0] += 10
+    invoke("inject")
+    assert m.firewall_present("eth2", "a" * 32)
+    assert (m.STATE / "active.json").read_bytes() == original
+    proof = cmd(["busctl", "TimersMonotonic"])
+    assert json.loads(proof.stdout)["data"][0][2] == 1000000000
+    assert sum(c[0] == "systemd-run" for c in log) == 1
+
+
+def test_duplicate_arm_cannot_extend_deadline(router_harness, router_clock):
+    m, log, rules, cmd, invoke = router_harness
+    invoke("arm")
+    original = (m.STATE / "active.json").read_bytes()
+    router_clock[0] += 10
     with pytest.raises(ValueError):
         invoke("arm")
     assert sum(c[0] == "systemd-run" for c in log) == 1
     assert (m.STATE / "active.json").read_bytes() == original
+    invoke("inject")
+    assert m.firewall_present("eth2", "a" * 32)
 
 
 def test_timer_stop_failure_retains_recovery_and_never_reports_cleanup(router_harness, monkeypatch):

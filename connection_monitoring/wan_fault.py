@@ -334,6 +334,7 @@ def verify_timer(site, wan, run, ttl):
             raise ValueError()
     except (KeyError, IndexError, TypeError, ValueError, OSError):
         raise ValueError("Owned recovery timer could not be verified") from None
+    return timers[0][2]
 
 
 def restore(site, wan, run):
@@ -462,7 +463,7 @@ def main(config=None):
                     SITES[a.site]["timer_prefix"] + a.run + ".timer",
                 ]
             )
-            verify_timer(a.site, a.wan, a.run, a.ttl)
+            deadline = verify_timer(a.site, a.wan, a.run, a.ttl)
             marker.write_text(
                 json.dumps(
                     {
@@ -471,6 +472,7 @@ def main(config=None):
                         "wan": a.wan,
                         "armed_at": time.time(),
                         "ttl": a.ttl,
+                        "deadline_monotonic_usec": deadline,
                     }
                 )
             )
@@ -484,7 +486,7 @@ def main(config=None):
                 a.run,
                 a.site,
                 a.wan,
-            ) or saved.get("ttl") != a.ttl or not 0 <= time.time() - saved["armed_at"] <= 30:
+            ) or saved.get("ttl") != a.ttl or not 0 <= time.time() - saved["armed_at"] <= 30 or type(saved.get("deadline_monotonic_usec")) is not int:
                 raise ValueError("Recovery arm expired or mismatched")
             command(
                 [
@@ -493,7 +495,10 @@ def main(config=None):
                     SITES[a.site]["timer_prefix"] + a.run + ".timer",
                 ]
             )
-            verify_timer(a.site, a.wan, a.run, a.ttl)
+            # A restarted timer can still have the correct TTL and a future
+            # deadline. Injection requires the original positively proven one.
+            if verify_timer(a.site, a.wan, a.run, a.ttl) != saved["deadline_monotonic_usec"]:
+                raise ValueError("Recovery timer deadline changed after arm")
             check_baseline(network_info(), a.wan, management_interface(), a.site)
             try:
                 for args in fault_commands(interface, a.run):
