@@ -427,7 +427,7 @@ class SQLiteLedger:
             tx.activation(activation, initialize=True)
             if tx.cases(unresolved=True):
                 return Admission("recovery_unverified")
-            if run.slot is not None and tx.find_run(run.slot):
+            if tx.get_run(run.id) or run.slot is not None and tx.find_run(run.slot):
                 return Admission("already_completed")
             tx.create_run(run)
             return Admission("claimed")

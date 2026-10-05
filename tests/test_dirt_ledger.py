@@ -62,6 +62,21 @@ def test_atomic_claim_checks_activation_unresolved_and_slot(ledger):
     assert ledger.transact(lambda tx: tx.get_run("next")) is None
 
 
+@pytest.mark.parametrize(
+    "outcome", ["running", "passed", "failed", "skipped", "interrupted"]
+)
+def test_manual_run_identity_deduplicates_without_a_monthly_slot(ledger, outcome):
+    ledger = ledger()
+    m = ledger_module()
+    intent = m.RunRecord("bounded-manual", None, "running")
+    assert ledger.claim_run(100, intent).status == "claimed"
+    if outcome != "running":
+        ledger.transact(lambda tx: tx.finish_run(intent.id, outcome))
+    before = ledger.transact(lambda tx: tx.runs())
+    assert ledger.claim_run(100, intent).status == "already_completed"
+    assert ledger.transact(lambda tx: tx.runs()) == before
+
+
 def test_case_transition_event_and_inspection_commit_together(ledger):
     ledger = ledger()
     m = ledger_module()
@@ -340,7 +355,7 @@ class MemoryLedger:
                 return m.Admission("busy")
             if tx.cases(unresolved=True):
                 return m.Admission("recovery_unverified")
-            if run.slot is not None and tx.find_run(run.slot):
+            if tx.get_run(run.id) or run.slot is not None and tx.find_run(run.slot):
                 return m.Admission("already_completed")
             tx.activation(activation, initialize=True)
             tx.state["owner"] = owner

@@ -1091,13 +1091,16 @@ def test_cloud_interrupted_intent_needs_terminal_execution_proof(rig):
 
 
 @pytest.mark.parametrize("failure", [None, "armed_write", "guard"])
+@pytest.mark.parametrize("bounded_manual", [False, True])
 def test_actual_engine_has_no_cloud_calls_between_arm_and_inject(
-    rig, monkeypatch, failure
+    rig, monkeypatch, failure, bounded_manual
 ):
     from connection_monitoring import dirt
     import time
 
-    c, store = cloud_coordinator(rig)
+    c, store = (
+        manual_window_coordinator(rig) if bounded_manual else cloud_coordinator(rig)
+    )
     gap = [False]
     phase = ["baseline"]
     actions = []
@@ -1282,3 +1285,268 @@ def test_actual_engine_armed_clock_failure_defers_cloud_io_until_restore(
     assert c.broken and len(store.state["cases"]) == 1
     stages = next(iter(store.state["stages"].values()))
     assert [s["stage"] for s in stages] == ["baseline", "error", "cleanup", "result"]
+
+
+def manual_window_coordinator(rig, *, duration=7200):
+    from dataclasses import replace
+
+    c, store = cloud_coordinator(rig)
+    start = rig[1][0]
+    c.policy = replace(
+        c.policy,
+        activation=start + 30 * 86400,
+        manual_window=(start, start + duration),
+    )
+    module().validate_policy(c.policy)
+    return c, store
+
+
+@pytest.mark.parametrize(
+    "window",
+    [
+        (),
+        (1,),
+        (1, 2, 3),
+        [1, 2],
+        "1,2",
+        (True, 2),
+        (1, False),
+        (0, 2),
+        (-1, 2),
+        (2, 2),
+        (3, 2),
+        (1, float("nan")),
+        (float("inf"), 2),
+        (1, float("inf")),
+        (1, 10**1000),
+        (1, 10802),
+    ],
+)
+def test_manual_window_rejects_invalid_or_excessive_intervals(rig, window):
+    from dataclasses import replace
+
+    with pytest.raises(ValueError, match="policy"):
+        module().validate_policy(replace(rig[0].policy, manual_window=window))
+
+
+@pytest.mark.parametrize("activated", [False, True])
+@pytest.mark.parametrize(
+    "delay,expected",
+    [(-1, "not_due"), (601, "outside_window"), (7200, "outside_window")],
+)
+def test_manual_window_rejected_admission_has_no_health_reports_or_claims(
+    rig, activated, delay, expected
+):
+    from dataclasses import replace
+
+    c, store = manual_window_coordinator(rig)
+    if activated:
+        c.policy = replace(c.policy, activation=rig[1][0] - 10)
+    health_calls = []
+    c.health = lambda: health_calls.append(True)
+    rig[1][0] += delay
+    assert c.manual("controller", [("north", "backup")]) == expected
+    assert not health_calls and not rig[2] and not rig[3]
+    assert not store.calls and store.state["activation"] is None
+    assert not store.state["runs"] and store.state["owner"] is None
+
+
+def test_manual_window_exact_end_before_grace_never_claims(rig):
+    c, store = manual_window_coordinator(rig, duration=100)
+    rig[1][0] += 100
+    assert c.manual("controller") == "outside_window"
+    assert not store.calls and not rig[3]
+
+
+@pytest.mark.parametrize("delay", [0, 600])
+def test_manual_window_permits_ordered_site_suite_before_monthly_activation(rig, delay):
+    c, store = manual_window_coordinator(rig)
+    rig[1][0] += delay
+    assert c.manual("controller", [("north", "main"), ("north", "backup")]) == "passed"
+    assert rig[2] == [("north", "backup"), ("north", "main")]
+    assert store.state["activation"] == c.policy.activation
+    assert all(run.slot is None for run in store.state["runs"].values())
+    assert store.state["owner"] is None
+    assert len(store.state["inspections"]) == 2
+    assert rig[3][0]["facts"]["reason_codes"] == ["manual"]
+
+
+def test_default_manual_policy_still_requires_activation(rig):
+    from dataclasses import replace
+
+    c, store = cloud_coordinator(rig)
+    assert c.policy.manual_window is None
+    c.policy = replace(c.policy, activation=rig[1][0] + 1)
+    assert c.manual("controller") == "not_due"
+    assert not store.calls and not rig[2] and not rig[3]
+
+
+def test_manual_window_does_not_enable_scheduled_work_before_activation(rig):
+    c, store = manual_window_coordinator(rig)
+    assert c.scheduled("controller") == "not_due"
+    assert not store.calls and not rig[2] and not rig[3]
+
+
+def test_expired_manual_window_does_not_shorten_scheduled_work(rig):
+    from dataclasses import replace
+
+    c, store = cloud_coordinator(rig)
+    now = rig[1][0]
+    c.policy = replace(c.policy, manual_window=(now - 7200, now - 1))
+    assert c.scheduled("controller") == "passed"
+    assert len(rig[2]) == 4
+    assert [run.slot for run in store.state["runs"].values()] == [now]
+
+
+@pytest.mark.parametrize(
+    "mode,expected", [("disabled", "disabled"), ("host", "unsupported")]
+)
+def test_manual_window_keeps_existing_authority_gates(rig, mode, expected):
+    from dataclasses import replace
+
+    c, store = manual_window_coordinator(rig)
+    if mode == "disabled":
+        c.policy = replace(c.policy, enabled=False)
+    assert c.manual("other" if mode == "host" else "controller") == expected
+    assert not store.calls and not rig[2] and not rig[3]
+
+
+def test_manual_window_cannot_take_over_existing_owner(rig):
+    c, store = manual_window_coordinator(rig)
+    assert (
+        store.claim_run(
+            c.policy.activation, module().RunRecord("existing", None, "running")
+        ).status
+        == "claimed"
+    )
+    before = deepcopy(store.state)
+    assert c.manual("controller") == "busy"
+    assert store.state == before and not rig[2] and not rig[3]
+
+
+@pytest.mark.parametrize("boundary", ["before_arm", "health_refresh", "before_inject"])
+def test_actual_engine_manual_window_reserve_exhaustion_restores_without_injection(
+    rig, monkeypatch, boundary
+):
+    from connection_monitoring import dirt
+
+    c, store = manual_window_coordinator(rig, duration=2703)
+    actions = []
+    health_calls = []
+    original_health = c.health
+
+    def health():
+        health_calls.append(True)
+        value = original_health()
+        if boundary == "health_refresh" and len(health_calls) == 3:
+            rig[1][0] += 4
+        return value
+
+    def ssh(site, role, source, args=()):
+        if role == "monitor":
+            return dict(
+                internet=True,
+                collector_active=True,
+                alert=dict(state="inactive", health="ok"),
+            )
+        action = args[0]
+        actions.append(action)
+        if (boundary == "before_arm" and action == "probe") or (
+            boundary == "before_inject" and action == "arm"
+        ):
+            rig[1][0] += 4
+        return {"cleanup": True}
+
+    c.health = health
+    monkeypatch.setattr(dirt, "SITES", {"north": {"primary": "main"}})
+    monkeypatch.setattr(dirt, "router_source", lambda site: "fixture")
+    monkeypatch.setattr(dirt, "ssh", ssh)
+    c.run_case = lambda *args, **kwargs: dirt.run(*args, **kwargs, poll=0)
+    assert c.manual("controller", [("north", "backup")]) == (
+        "failed" if boundary == "before_inject" else "skipped"
+    )
+    assert actions == (
+        ["probe", "arm", "restore"] if boundary == "before_inject" else ["probe"]
+    )
+    case = next(iter(store.state["cases"].values()))
+    assert case.restored is True
+    assert next(e for e in rig[3] if e["phase"] == "case_finished")["facts"][
+        "reason_codes"
+    ] == ["outside_window"]
+
+
+def test_manual_window_budget_blocks_second_case_after_restored_first_case(rig):
+    c, store = manual_window_coordinator(rig, duration=3000)
+    run = c.run_case
+
+    def elapsed(*args, **kwargs):
+        value = run(*args, **kwargs)
+        rig[1][0] += 301
+        return value
+
+    c.run_case = elapsed
+    assert c.manual("controller", [("north", "backup"), ("north", "main")]) == "skipped"
+    assert rig[2] == [("north", "backup")]
+    assert len(store.state["cases"]) == 1
+    case = next(iter(store.state["cases"].values()))
+    assert case.outcome == "passed" and case.restored is True
+
+
+@pytest.mark.parametrize(
+    "first_outcome", ["passed", "failed", "skipped", "interrupted"]
+)
+def test_manual_window_replay_across_fresh_coordinator_preserves_first_outcome(
+    rig, first_outcome
+):
+    from dataclasses import replace
+
+    c, now, calls, sent = rig
+    c.policy = replace(c.policy, manual_window=(now[0], now[0] + 7200))
+    good_health, good_run = c.health, c.run_case
+    if first_outcome == "skipped":
+        c.health = lambda: dict(version=1, observed_at=now[0], checks={})
+    elif first_outcome in ("failed", "interrupted"):
+
+        def engine(site, wan, rid, emit, **kw):
+            kw["before_arm"]()
+            kw["before_inject"]()
+            calls.append((site, wan))
+            if first_outcome == "interrupted":
+                raise KeyboardInterrupt()
+            return False
+
+        c.run_case = engine
+    selection = [("north", "backup"), ("north", "main")]
+    assert c.manual("controller", selection) == first_outcome
+    with c.db() as db:
+        before = db.execute("SELECT * FROM runs").fetchall()
+    effects = (len(calls), len(sent))
+    fresh = module().Coordinator(
+        c.policy,
+        clock=c.clock,
+        health=good_health,
+        report=c.report,
+        run_case=good_run,
+        inspect=c.inspect,
+    )
+    assert fresh.manual("controller", list(reversed(selection))) == "already_completed"
+    assert (len(calls), len(sent)) == effects
+    with c.db() as db:
+        assert db.execute("SELECT * FROM runs").fetchall() == before
+
+
+def test_manual_window_replay_uses_atomic_cloud_claim_without_new_monthly_slot(rig):
+    c, store = manual_window_coordinator(rig)
+    assert c.manual("controller", [("north", "backup")]) == "passed"
+    state = deepcopy(store.state)
+    other = module().Coordinator(
+        c.policy,
+        clock=c.clock,
+        health=c.health,
+        report=c.report,
+        run_case=c.run_case,
+        inspect=c.inspect,
+        store=store,
+    )
+    assert other.manual("controller", [("north", "backup")]) == "already_completed"
+    assert store.state == state and rig[2] == [("north", "backup")]

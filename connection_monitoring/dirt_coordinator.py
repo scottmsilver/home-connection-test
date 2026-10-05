@@ -1,5 +1,6 @@
 """Caller configured monthly drill policy and durable controller state (Python 3.9+)."""
 
+import hashlib
 import math
 from itertools import islice
 from dataclasses import dataclass
@@ -11,6 +12,7 @@ import os
 import uuid
 from copy import deepcopy
 from pathlib import Path
+from typing import Optional
 from .dirt_ledger import (
     SQLiteLedger,
     RunRecord,
@@ -67,6 +69,7 @@ class Policy:
     case_budget: float
     health_age: float
     receipt_age: float
+    manual_window: Optional[tuple] = None
 
 
 def month_slot(policy, year, month):
@@ -142,6 +145,15 @@ def validate_policy(p):
         or not 0 < p.health_age <= 120
         or not 0 < p.receipt_age <= 300
         or p.case_budget > p.window
+        or (
+            p.manual_window is not None
+            and (
+                type(p.manual_window) is not tuple
+                or len(p.manual_window) != 2
+                or any(not finite(n) or n <= 0 for n in p.manual_window)
+                or not 0 < p.manual_window[1] - p.manual_window[0] <= p.window
+            )
+        )
         or any(type(n) is not int for n in (p.weekday, p.week, p.hour, p.minute))
         or not 0 <= p.weekday <= 6
         or not 1 <= p.week <= 5
@@ -555,7 +567,13 @@ class Coordinator:
             if not acquired:
                 return "busy"
             now = self.now()
-            if now < p.activation:
+            if manual and p.manual_window is not None:
+                opening, closing = p.manual_window
+                if now < opening:
+                    return "not_due"
+                if now >= closing or now - opening > p.start_grace:
+                    return "outside_window"
+            elif now < p.activation:
                 return "not_due"
             local = datetime.fromtimestamp(now, ZoneInfo(p.timezone))
             slot = now if manual else month_slot(p, local.year, local.month)
@@ -564,6 +582,19 @@ class Coordinator:
             if not manual and now - slot > p.start_grace:
                 return "outside_window"
             rid = uuid.uuid4().hex
+            if manual and p.manual_window is not None:
+                # A bounded manual intent is one-shot across fresh processes;
+                # it never occupies or rewrites a monthly schedule slot.
+                identity = [
+                    "manual-window-v1",
+                    p.authority,
+                    float(p.activation),
+                    [float(n) for n in p.manual_window],
+                    selected,
+                ]
+                rid = hashlib.sha256(
+                    json.dumps(identity, separators=(",", ":")).encode()
+                ).hexdigest()[:32]
             admission = self.store.claim_run(
                 p.activation, RunRecord(rid, None if manual else slot, "running")
             )
@@ -601,7 +632,16 @@ class Coordinator:
                 outcome = "passed"
                 for site, wan in selected:
                     case_out, summary = self.case(
-                        rid, site, wan, slot, start, receipt, hostname
+                        rid,
+                        site,
+                        wan,
+                        slot,
+                        start,
+                        receipt,
+                        hostname,
+                        window_end=(
+                            p.manual_window[1] if manual and p.manual_window else None
+                        ),
                     )
                     summaries.append(summary)
                     if self.broken and case_out == "passed":
@@ -646,8 +686,13 @@ class Coordinator:
             and -5 <= self.now() - receipt["accepted_at"] <= self.policy.receipt_age
         )
 
-    def case(self, rid, site, wan, slot, start, start_receipt, hostname):
+    def case(
+        self, rid, site, wan, slot, start, start_receipt, hostname, *, window_end=None
+    ):
         p = self.policy
+        deadline = slot + p.window
+        if window_end is not None:
+            deadline = min(deadline, window_end)
         cid = uuid.uuid4().hex
         router_id = uuid.uuid4().hex
         checks = {}
@@ -659,7 +704,7 @@ class Coordinator:
 
         def budget():
             now = self.now()
-            if now < origin or slot + p.window - now < p.case_budget:
+            if now < origin or deadline - now < p.case_budget:
                 raise CoordinatorRejected("outside_window")
 
         budget()
