@@ -1,0 +1,322 @@
+{
+  "version": 1,
+  "now": "2026-10-06T12:01:00Z",
+  "valid_snapshot": {
+    "version": 1,
+    "site": "example-site",
+    "observed_at": 1791288000,
+    "uptime_seconds": 120.5,
+    "root_free_percent": 47.2,
+    "services": {
+      "collector": "healthy",
+      "dashboard": "unknown"
+    }
+  },
+  "invalid_snapshots": [
+    {
+      "name": "invalid_version",
+      "snapshot": {
+        "version": true,
+        "site": "example-site",
+        "observed_at": 1791288000,
+        "uptime_seconds": 120.5,
+        "root_free_percent": 47.2,
+        "services": {
+          "collector": "healthy",
+          "dashboard": "unknown"
+        }
+      }
+    },
+    {
+      "name": "invalid_root_free_percent",
+      "snapshot": {
+        "version": 1,
+        "site": "example-site",
+        "observed_at": 1791288000,
+        "uptime_seconds": 120.5,
+        "root_free_percent": 101,
+        "services": {
+          "collector": "healthy",
+          "dashboard": "unknown"
+        }
+      }
+    },
+    {
+      "name": "invalid_observed_at",
+      "snapshot": {
+        "version": 1,
+        "site": "example-site",
+        "observed_at": null,
+        "uptime_seconds": 120.5,
+        "root_free_percent": 47.2,
+        "services": {
+          "collector": "healthy",
+          "dashboard": "unknown"
+        }
+      }
+    },
+    {
+      "name": "invalid_received_at",
+      "snapshot": {
+        "version": 1,
+        "site": "example-site",
+        "observed_at": 1791288000,
+        "uptime_seconds": 120.5,
+        "root_free_percent": 47.2,
+        "services": {
+          "collector": "healthy",
+          "dashboard": "unknown"
+        },
+        "received_at": 1791288000
+      }
+    }
+  ],
+  "documents": [
+    {
+      "name": "fresh",
+      "document": {
+        "version": 1,
+        "site": "example-site",
+        "observed_at": 1791288000,
+        "uptime_seconds": 120.5,
+        "root_free_percent": 47.2,
+        "services": {
+          "collector": "healthy",
+          "dashboard": "unknown"
+        },
+        "received_at": "2026-10-06T12:00:00Z"
+      },
+      "expected": "receiving",
+      "firestore_document": {
+        "fields": {
+          "version": {
+            "integerValue": "1"
+          },
+          "site": {
+            "stringValue": "example-site"
+          },
+          "observed_at": {
+            "integerValue": "1791288000"
+          },
+          "uptime_seconds": {
+            "doubleValue": 120.5
+          },
+          "root_free_percent": {
+            "doubleValue": 47.2
+          },
+          "services": {
+            "mapValue": {
+              "fields": {
+                "collector": {
+                  "stringValue": "healthy"
+                },
+                "dashboard": {
+                  "stringValue": "unknown"
+                }
+              }
+            }
+          },
+          "received_at": {
+            "timestampValue": "2026-10-06T12:00:00Z"
+          }
+        }
+      }
+    },
+    {
+      "name": "stale",
+      "document": {
+        "version": 1,
+        "site": "example-site",
+        "observed_at": 1791288000,
+        "uptime_seconds": 120.5,
+        "root_free_percent": 47.2,
+        "services": {
+          "collector": "healthy",
+          "dashboard": "unknown"
+        },
+        "received_at": "2026-10-06T11:57:00Z"
+      },
+      "expected": "missing",
+      "firestore_document": {
+        "fields": {
+          "version": {
+            "integerValue": "1"
+          },
+          "site": {
+            "stringValue": "example-site"
+          },
+          "observed_at": {
+            "integerValue": "1791288000"
+          },
+          "uptime_seconds": {
+            "doubleValue": 120.5
+          },
+          "root_free_percent": {
+            "doubleValue": 47.2
+          },
+          "services": {
+            "mapValue": {
+              "fields": {
+                "collector": {
+                  "stringValue": "healthy"
+                },
+                "dashboard": {
+                  "stringValue": "unknown"
+                }
+              }
+            }
+          },
+          "received_at": {
+            "timestampValue": "2026-10-06T11:57:00Z"
+          }
+        }
+      }
+    },
+    {
+      "name": "future",
+      "document": {
+        "version": 1,
+        "site": "example-site",
+        "observed_at": 1791288000,
+        "uptime_seconds": 120.5,
+        "root_free_percent": 47.2,
+        "services": {
+          "collector": "healthy",
+          "dashboard": "unknown"
+        },
+        "received_at": "2026-10-06T12:05:00Z"
+      },
+      "expected": "unknown",
+      "firestore_document": {
+        "fields": {
+          "version": {
+            "integerValue": "1"
+          },
+          "site": {
+            "stringValue": "example-site"
+          },
+          "observed_at": {
+            "integerValue": "1791288000"
+          },
+          "uptime_seconds": {
+            "doubleValue": 120.5
+          },
+          "root_free_percent": {
+            "doubleValue": 47.2
+          },
+          "services": {
+            "mapValue": {
+              "fields": {
+                "collector": {
+                  "stringValue": "healthy"
+                },
+                "dashboard": {
+                  "stringValue": "unknown"
+                }
+              }
+            }
+          },
+          "received_at": {
+            "timestampValue": "2026-10-06T12:05:00Z"
+          }
+        }
+      }
+    },
+    {
+      "name": "malformed",
+      "document": {
+        "version": 1,
+        "site": "example-site",
+        "observed_at": 1791288000,
+        "uptime_seconds": 120.5,
+        "root_free_percent": 47.2,
+        "services": {
+          "collector": "healthy",
+          "dashboard": "unknown"
+        },
+        "received_at": "not-a-time"
+      },
+      "expected": "unknown",
+      "firestore_document": {
+        "fields": {
+          "version": {
+            "integerValue": "1"
+          },
+          "site": {
+            "stringValue": "example-site"
+          },
+          "observed_at": {
+            "integerValue": "1791288000"
+          },
+          "uptime_seconds": {
+            "doubleValue": 120.5
+          },
+          "root_free_percent": {
+            "doubleValue": 47.2
+          },
+          "services": {
+            "mapValue": {
+              "fields": {
+                "collector": {
+                  "stringValue": "healthy"
+                },
+                "dashboard": {
+                  "stringValue": "unknown"
+                }
+              }
+            }
+          },
+          "received_at": {
+            "timestampValue": "not-a-time"
+          }
+        }
+      }
+    },
+    {
+      "name": "missing_receipt",
+      "document": {
+        "version": 1,
+        "site": "example-site",
+        "observed_at": 1791288000,
+        "uptime_seconds": 120.5,
+        "root_free_percent": 47.2,
+        "services": {
+          "collector": "healthy",
+          "dashboard": "unknown"
+        }
+      },
+      "expected": "unknown",
+      "firestore_document": {
+        "fields": {
+          "version": {
+            "integerValue": "1"
+          },
+          "site": {
+            "stringValue": "example-site"
+          },
+          "observed_at": {
+            "integerValue": "1791288000"
+          },
+          "uptime_seconds": {
+            "doubleValue": 120.5
+          },
+          "root_free_percent": {
+            "doubleValue": 47.2
+          },
+          "services": {
+            "mapValue": {
+              "fields": {
+                "collector": {
+                  "stringValue": "healthy"
+                },
+                "dashboard": {
+                  "stringValue": "unknown"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  ]
+}
