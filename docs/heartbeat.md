@@ -34,7 +34,9 @@ Consumer liveness must use this receipt instead of the sender's wall clock.
 `observed_at` and uptime are finite nonboolean numbers between 0 and 1e12;
 root free percentage is between 0 and 100. Uptime/free may be null when unknown.
 Services contain one to eight identifier keys, each healthy, unhealthy, or unknown.
-Configuration optionally binds validation to the exact configured service keys.
+`HeartbeatClient` requires the exact configured service keys. Standalone
+`validate_snapshot(..., expected_services=None)` can validate the generic contract
+without binding to a particular service mapping.
 
 The credential file contains exactly `version: 1`, `project_id`, `uid`, and
 `refresh_token`. Both credential and ID-token cache require owner-only files and
