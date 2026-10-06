@@ -94,3 +94,24 @@ def test_insecure_cache_is_not_silently_adopted(tmp_path):
     creds,cache=setup(tmp_path);cache.write_text('{}');cache.chmod(0o644)
     with pytest.raises(HeartbeatError,match='file_invalid'):
         HeartbeatClient(CONFIG,creds,cache,request=lambda *args:pytest.fail('HTTP must not run'),clock=lambda:NOW).publish(snapshot())
+
+
+def test_v2_transport_binds_exact_checks_and_revision(tmp_path):
+    from tests.test_health_report import report,REVISION
+    value=report();config={k:v for k,v in CONFIG.items() if k!='service_keys'}
+    config.update(check_keys=list(value['checks']),check_revision=REVISION)
+    creds,cache=setup(tmp_path);calls=[]
+    def request(url,body,*args):
+        calls.append((url,body))
+        return {'id_token':jwt(),'user_id':CONFIG['expected_uid'],'refresh_token':'safe'} if 'securetoken' in url else {'commitTime':'x'}
+    client=HeartbeatClient(config,creds,cache,request=request,clock=lambda:NOW)
+    assert client.publish(value)=={'accepted':True}
+    with pytest.raises(ValueError):client.publish(dict(value,check_revision='b'*64))
+    assert len(calls)==2
+
+
+def test_v2_unhashable_check_keys_are_sanitized_configuration_errors():
+    from connection_monitoring.heartbeat_transport import validate_config
+    raw={'project_id':'example-project','site_id':'example-site','collection':'siteHeartbeats',
+         'api_key':'public-api-key','expected_uid':'machine','check_keys':[{}],'check_revision':'a'*64}
+    with pytest.raises(HeartbeatError,match='client_configuration_invalid'):validate_config(raw)

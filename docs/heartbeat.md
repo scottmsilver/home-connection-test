@@ -61,3 +61,28 @@ Common producer and stored-document fixtures are in
 normalized timestamp strings for readers in another language, with valid, stale,
 future, malformed, and missing receipt examples. Fresh liveness is independent of
 reported component health.
+
+## Canonical health reports (version 2)
+
+`connection_monitoring.health_report.validate_health_snapshot` validates a producer
+report bound to its site, expected check IDs and measurement revision. It accepts
+exactly `version`, `site`, `observed_at`, `uptime_seconds`, `root_free_percent`,
+`check_revision`, and `checks`. Each check contains exactly `available`, `healthy`,
+`observed_at`, `source_observed_at`, and `source_expires_at`. Unknown checks have
+`available: false`, `healthy: null`; unknown measurement times may be null.
+Diagnostic uptime and disk percentage may also be null.
+
+Configure `HeartbeatClient` with `check_keys` and `check_revision` in place of
+version 1's `service_keys`. The existing credential and refresh-token lifecycle
+is unchanged. `publish(report)` writes one atomic Firestore commit with the
+server-set `received_at` field. It never refreshes supplied measurement or source
+times, infers health from connectivity, or silently accepts version 1 with a
+version 2 client configuration.
+
+The generic library validates structure and transport identity. The application
+must additionally check the pinned revision, complete expected check set, report
+freshness, and measurement-specific source lifetimes before admitting an action.
+`tests/fixtures/health-report-v2.json` supplies language-independent JSON and typed
+Firestore vectors covering freshness, unknown/partial checks, changed pins,
+expired sources and clock skew. Its `expected_ready` labels apply to consumers;
+a structurally valid report may deliberately describe expired or failed health.

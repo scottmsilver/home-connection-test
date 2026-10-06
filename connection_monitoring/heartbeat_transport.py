@@ -91,17 +91,26 @@ def write_private(path, value):
 
 
 def validate_config(raw):
-    keys = {'project_id', 'site_id', 'collection', 'api_key', 'expected_uid', 'service_keys'}
-    if type(raw) is not dict or set(raw) != keys: raise HeartbeatError('client_configuration_invalid')
+    keys = {'project_id', 'site_id', 'collection', 'api_key', 'expected_uid'}
+    if type(raw) is not dict or set(raw) not in (keys|{'service_keys'},keys|{'check_keys','check_revision'}): raise HeartbeatError('client_configuration_invalid')
     for key, pattern in [('project_id', PROJECT), ('site_id', IDENTIFIER), ('collection', COLLECTION)]:
         if type(raw[key]) is not str or not pattern.fullmatch(raw[key]): raise HeartbeatError('client_configuration_invalid')
     for key, maximum in [('api_key', 256), ('expected_uid', 128)]:
         if type(raw[key]) is not str or not 1 <= len(raw[key]) <= maximum or any(ord(c) < 32 for c in raw[key]):
             raise HeartbeatError('client_configuration_invalid')
-    services = raw['service_keys']
-    if type(services) is not list or not 1 <= len(services) <= 8 or any(type(k) is not str or not IDENTIFIER.fullmatch(k) for k in services) or len(set(services)) != len(services):
+    if 'service_keys' in raw:
+        services = raw['service_keys']
+        if type(services) is not list or not 1 <= len(services) <= 8 or any(type(k) is not str or not IDENTIFIER.fullmatch(k) for k in services) or len(set(services)) != len(services):
+            raise HeartbeatError('client_configuration_invalid')
+        return dict(raw, service_keys=list(services))
+    from .health_report import CHECK_ID,REVISION
+    checks=raw['check_keys'];revision=raw['check_revision']
+    if (type(checks) is not list or not 1<=len(checks)<=64
+            or any(type(k) is not str or not CHECK_ID.fullmatch(k) or not k.startswith(raw['site_id']+'.') for k in checks)
+            or len(set(checks))!=len(checks)
+            or type(revision) is not str or not REVISION.fullmatch(revision)):
         raise HeartbeatError('client_configuration_invalid')
-    return dict(raw, service_keys=list(services))
+    return dict(raw,check_keys=list(checks))
 
 
 def token_valid(token, config, now):
@@ -160,7 +169,10 @@ class HeartbeatClient:
         return token
 
     def publish(self, snapshot):
-        snapshot = validate_snapshot(snapshot, self.config['site_id'], self.config['service_keys'])
+        if 'check_keys' in self.config:
+            from .health_report import validate_health_snapshot
+            snapshot=validate_health_snapshot(snapshot,self.config['site_id'],self.config['check_keys'],self.config['check_revision'])
+        else:snapshot = validate_snapshot(snapshot, self.config['site_id'], self.config['service_keys'])
         token = self.id_token()
         url = FIRESTORE_BASE + '/projects/' + self.config['project_id'] + '/databases/(default)/documents:commit'
         body = json.dumps(commit_body(self.config['project_id'], self.config['collection'], snapshot), allow_nan=False).encode()

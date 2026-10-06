@@ -1,0 +1,902 @@
+{
+  "version": 2,
+  "now": 1791288000,
+  "site": "example-site",
+  "expected_revision": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "expected_checks": [
+    "example-site.router.samples",
+    "example-site.monitor.alerts",
+    "example-site.monitor.telemetry"
+  ],
+  "cases": [
+    {
+      "name": "fresh",
+      "document": {
+        "version": 2,
+        "site": "example-site",
+        "observed_at": 1791287980,
+        "received_at": "2026-10-06T12:00:00Z",
+        "uptime_seconds": 120,
+        "root_free_percent": 42,
+        "check_revision": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "checks": {
+          "example-site.router.samples": {
+            "available": true,
+            "healthy": true,
+            "observed_at": 1791287980,
+            "source_observed_at": 1791287600,
+            "source_expires_at": 1791288200
+          },
+          "example-site.monitor.alerts": {
+            "available": true,
+            "healthy": true,
+            "observed_at": 1791287980,
+            "source_observed_at": 1791287980,
+            "source_expires_at": 1791288100
+          },
+          "example-site.monitor.telemetry": {
+            "available": true,
+            "healthy": true,
+            "observed_at": 1791287980,
+            "source_observed_at": 1791287780,
+            "source_expires_at": 1791288080
+          }
+        }
+      },
+      "firestore_document": {
+        "name": "projects/example-project/databases/(default)/documents/siteHeartbeats/example-site",
+        "fields": {
+          "version": {
+            "integerValue": "2"
+          },
+          "site": {
+            "stringValue": "example-site"
+          },
+          "observed_at": {
+            "integerValue": "1791287980"
+          },
+          "received_at": {
+            "timestampValue": "2026-10-06T12:00:00Z"
+          },
+          "uptime_seconds": {
+            "integerValue": "120"
+          },
+          "root_free_percent": {
+            "integerValue": "42"
+          },
+          "check_revision": {
+            "stringValue": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          },
+          "checks": {
+            "mapValue": {
+              "fields": {
+                "example-site.router.samples": {
+                  "mapValue": {
+                    "fields": {
+                      "available": {
+                        "booleanValue": true
+                      },
+                      "healthy": {
+                        "booleanValue": true
+                      },
+                      "observed_at": {
+                        "integerValue": "1791287980"
+                      },
+                      "source_observed_at": {
+                        "integerValue": "1791287600"
+                      },
+                      "source_expires_at": {
+                        "integerValue": "1791288200"
+                      }
+                    }
+                  }
+                },
+                "example-site.monitor.alerts": {
+                  "mapValue": {
+                    "fields": {
+                      "available": {
+                        "booleanValue": true
+                      },
+                      "healthy": {
+                        "booleanValue": true
+                      },
+                      "observed_at": {
+                        "integerValue": "1791287980"
+                      },
+                      "source_observed_at": {
+                        "integerValue": "1791287980"
+                      },
+                      "source_expires_at": {
+                        "integerValue": "1791288100"
+                      }
+                    }
+                  }
+                },
+                "example-site.monitor.telemetry": {
+                  "mapValue": {
+                    "fields": {
+                      "available": {
+                        "booleanValue": true
+                      },
+                      "healthy": {
+                        "booleanValue": true
+                      },
+                      "observed_at": {
+                        "integerValue": "1791287980"
+                      },
+                      "source_observed_at": {
+                        "integerValue": "1791287780"
+                      },
+                      "source_expires_at": {
+                        "integerValue": "1791288080"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "expected_ready": true
+    },
+    {
+      "name": "pin_mismatch",
+      "document": {
+        "version": 2,
+        "site": "example-site",
+        "observed_at": 1791287980,
+        "received_at": "2026-10-06T12:00:00Z",
+        "uptime_seconds": 120,
+        "root_free_percent": 42,
+        "check_revision": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "checks": {
+          "example-site.router.samples": {
+            "available": true,
+            "healthy": true,
+            "observed_at": 1791287980,
+            "source_observed_at": 1791287600,
+            "source_expires_at": 1791288200
+          },
+          "example-site.monitor.alerts": {
+            "available": true,
+            "healthy": true,
+            "observed_at": 1791287980,
+            "source_observed_at": 1791287980,
+            "source_expires_at": 1791288100
+          },
+          "example-site.monitor.telemetry": {
+            "available": true,
+            "healthy": true,
+            "observed_at": 1791287980,
+            "source_observed_at": 1791287780,
+            "source_expires_at": 1791288080
+          }
+        }
+      },
+      "firestore_document": {
+        "name": "projects/example-project/databases/(default)/documents/siteHeartbeats/example-site",
+        "fields": {
+          "version": {
+            "integerValue": "2"
+          },
+          "site": {
+            "stringValue": "example-site"
+          },
+          "observed_at": {
+            "integerValue": "1791287980"
+          },
+          "received_at": {
+            "timestampValue": "2026-10-06T12:00:00Z"
+          },
+          "uptime_seconds": {
+            "integerValue": "120"
+          },
+          "root_free_percent": {
+            "integerValue": "42"
+          },
+          "check_revision": {
+            "stringValue": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+          },
+          "checks": {
+            "mapValue": {
+              "fields": {
+                "example-site.router.samples": {
+                  "mapValue": {
+                    "fields": {
+                      "available": {
+                        "booleanValue": true
+                      },
+                      "healthy": {
+                        "booleanValue": true
+                      },
+                      "observed_at": {
+                        "integerValue": "1791287980"
+                      },
+                      "source_observed_at": {
+                        "integerValue": "1791287600"
+                      },
+                      "source_expires_at": {
+                        "integerValue": "1791288200"
+                      }
+                    }
+                  }
+                },
+                "example-site.monitor.alerts": {
+                  "mapValue": {
+                    "fields": {
+                      "available": {
+                        "booleanValue": true
+                      },
+                      "healthy": {
+                        "booleanValue": true
+                      },
+                      "observed_at": {
+                        "integerValue": "1791287980"
+                      },
+                      "source_observed_at": {
+                        "integerValue": "1791287980"
+                      },
+                      "source_expires_at": {
+                        "integerValue": "1791288100"
+                      }
+                    }
+                  }
+                },
+                "example-site.monitor.telemetry": {
+                  "mapValue": {
+                    "fields": {
+                      "available": {
+                        "booleanValue": true
+                      },
+                      "healthy": {
+                        "booleanValue": true
+                      },
+                      "observed_at": {
+                        "integerValue": "1791287980"
+                      },
+                      "source_observed_at": {
+                        "integerValue": "1791287780"
+                      },
+                      "source_expires_at": {
+                        "integerValue": "1791288080"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "expected_ready": false
+    },
+    {
+      "name": "stale_measurement",
+      "document": {
+        "version": 2,
+        "site": "example-site",
+        "observed_at": 1791287980,
+        "received_at": "2026-10-06T12:00:00Z",
+        "uptime_seconds": 120,
+        "root_free_percent": 42,
+        "check_revision": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "checks": {
+          "example-site.router.samples": {
+            "available": true,
+            "healthy": true,
+            "observed_at": 1791287879,
+            "source_observed_at": 1791287600,
+            "source_expires_at": 1791288200
+          },
+          "example-site.monitor.alerts": {
+            "available": true,
+            "healthy": true,
+            "observed_at": 1791287980,
+            "source_observed_at": 1791287980,
+            "source_expires_at": 1791288100
+          },
+          "example-site.monitor.telemetry": {
+            "available": true,
+            "healthy": true,
+            "observed_at": 1791287980,
+            "source_observed_at": 1791287780,
+            "source_expires_at": 1791288080
+          }
+        }
+      },
+      "firestore_document": {
+        "name": "projects/example-project/databases/(default)/documents/siteHeartbeats/example-site",
+        "fields": {
+          "version": {
+            "integerValue": "2"
+          },
+          "site": {
+            "stringValue": "example-site"
+          },
+          "observed_at": {
+            "integerValue": "1791287980"
+          },
+          "received_at": {
+            "timestampValue": "2026-10-06T12:00:00Z"
+          },
+          "uptime_seconds": {
+            "integerValue": "120"
+          },
+          "root_free_percent": {
+            "integerValue": "42"
+          },
+          "check_revision": {
+            "stringValue": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          },
+          "checks": {
+            "mapValue": {
+              "fields": {
+                "example-site.router.samples": {
+                  "mapValue": {
+                    "fields": {
+                      "available": {
+                        "booleanValue": true
+                      },
+                      "healthy": {
+                        "booleanValue": true
+                      },
+                      "observed_at": {
+                        "integerValue": "1791287879"
+                      },
+                      "source_observed_at": {
+                        "integerValue": "1791287600"
+                      },
+                      "source_expires_at": {
+                        "integerValue": "1791288200"
+                      }
+                    }
+                  }
+                },
+                "example-site.monitor.alerts": {
+                  "mapValue": {
+                    "fields": {
+                      "available": {
+                        "booleanValue": true
+                      },
+                      "healthy": {
+                        "booleanValue": true
+                      },
+                      "observed_at": {
+                        "integerValue": "1791287980"
+                      },
+                      "source_observed_at": {
+                        "integerValue": "1791287980"
+                      },
+                      "source_expires_at": {
+                        "integerValue": "1791288100"
+                      }
+                    }
+                  }
+                },
+                "example-site.monitor.telemetry": {
+                  "mapValue": {
+                    "fields": {
+                      "available": {
+                        "booleanValue": true
+                      },
+                      "healthy": {
+                        "booleanValue": true
+                      },
+                      "observed_at": {
+                        "integerValue": "1791287980"
+                      },
+                      "source_observed_at": {
+                        "integerValue": "1791287780"
+                      },
+                      "source_expires_at": {
+                        "integerValue": "1791288080"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "expected_ready": false
+    },
+    {
+      "name": "expired_source",
+      "document": {
+        "version": 2,
+        "site": "example-site",
+        "observed_at": 1791287980,
+        "received_at": "2026-10-06T12:00:00Z",
+        "uptime_seconds": 120,
+        "root_free_percent": 42,
+        "check_revision": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "checks": {
+          "example-site.router.samples": {
+            "available": true,
+            "healthy": true,
+            "observed_at": 1791287980,
+            "source_observed_at": 1791287600,
+            "source_expires_at": 1791288200
+          },
+          "example-site.monitor.alerts": {
+            "available": true,
+            "healthy": true,
+            "observed_at": 1791287980,
+            "source_observed_at": 1791287980,
+            "source_expires_at": 1791288100
+          },
+          "example-site.monitor.telemetry": {
+            "available": true,
+            "healthy": true,
+            "observed_at": 1791287980,
+            "source_observed_at": 1791287699,
+            "source_expires_at": 1791287999
+          }
+        }
+      },
+      "firestore_document": {
+        "name": "projects/example-project/databases/(default)/documents/siteHeartbeats/example-site",
+        "fields": {
+          "version": {
+            "integerValue": "2"
+          },
+          "site": {
+            "stringValue": "example-site"
+          },
+          "observed_at": {
+            "integerValue": "1791287980"
+          },
+          "received_at": {
+            "timestampValue": "2026-10-06T12:00:00Z"
+          },
+          "uptime_seconds": {
+            "integerValue": "120"
+          },
+          "root_free_percent": {
+            "integerValue": "42"
+          },
+          "check_revision": {
+            "stringValue": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          },
+          "checks": {
+            "mapValue": {
+              "fields": {
+                "example-site.router.samples": {
+                  "mapValue": {
+                    "fields": {
+                      "available": {
+                        "booleanValue": true
+                      },
+                      "healthy": {
+                        "booleanValue": true
+                      },
+                      "observed_at": {
+                        "integerValue": "1791287980"
+                      },
+                      "source_observed_at": {
+                        "integerValue": "1791287600"
+                      },
+                      "source_expires_at": {
+                        "integerValue": "1791288200"
+                      }
+                    }
+                  }
+                },
+                "example-site.monitor.alerts": {
+                  "mapValue": {
+                    "fields": {
+                      "available": {
+                        "booleanValue": true
+                      },
+                      "healthy": {
+                        "booleanValue": true
+                      },
+                      "observed_at": {
+                        "integerValue": "1791287980"
+                      },
+                      "source_observed_at": {
+                        "integerValue": "1791287980"
+                      },
+                      "source_expires_at": {
+                        "integerValue": "1791288100"
+                      }
+                    }
+                  }
+                },
+                "example-site.monitor.telemetry": {
+                  "mapValue": {
+                    "fields": {
+                      "available": {
+                        "booleanValue": true
+                      },
+                      "healthy": {
+                        "booleanValue": true
+                      },
+                      "observed_at": {
+                        "integerValue": "1791287980"
+                      },
+                      "source_observed_at": {
+                        "integerValue": "1791287699"
+                      },
+                      "source_expires_at": {
+                        "integerValue": "1791287999"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "expected_ready": false
+    },
+    {
+      "name": "future_measurement",
+      "document": {
+        "version": 2,
+        "site": "example-site",
+        "observed_at": 1791287980,
+        "received_at": "2026-10-06T12:00:00Z",
+        "uptime_seconds": 120,
+        "root_free_percent": 42,
+        "check_revision": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "checks": {
+          "example-site.router.samples": {
+            "available": true,
+            "healthy": true,
+            "observed_at": 1791287980,
+            "source_observed_at": 1791287600,
+            "source_expires_at": 1791288200
+          },
+          "example-site.monitor.alerts": {
+            "available": true,
+            "healthy": true,
+            "observed_at": 1791288010,
+            "source_observed_at": 1791287980,
+            "source_expires_at": 1791288100
+          },
+          "example-site.monitor.telemetry": {
+            "available": true,
+            "healthy": true,
+            "observed_at": 1791287980,
+            "source_observed_at": 1791287780,
+            "source_expires_at": 1791288080
+          }
+        }
+      },
+      "firestore_document": {
+        "name": "projects/example-project/databases/(default)/documents/siteHeartbeats/example-site",
+        "fields": {
+          "version": {
+            "integerValue": "2"
+          },
+          "site": {
+            "stringValue": "example-site"
+          },
+          "observed_at": {
+            "integerValue": "1791287980"
+          },
+          "received_at": {
+            "timestampValue": "2026-10-06T12:00:00Z"
+          },
+          "uptime_seconds": {
+            "integerValue": "120"
+          },
+          "root_free_percent": {
+            "integerValue": "42"
+          },
+          "check_revision": {
+            "stringValue": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          },
+          "checks": {
+            "mapValue": {
+              "fields": {
+                "example-site.router.samples": {
+                  "mapValue": {
+                    "fields": {
+                      "available": {
+                        "booleanValue": true
+                      },
+                      "healthy": {
+                        "booleanValue": true
+                      },
+                      "observed_at": {
+                        "integerValue": "1791287980"
+                      },
+                      "source_observed_at": {
+                        "integerValue": "1791287600"
+                      },
+                      "source_expires_at": {
+                        "integerValue": "1791288200"
+                      }
+                    }
+                  }
+                },
+                "example-site.monitor.alerts": {
+                  "mapValue": {
+                    "fields": {
+                      "available": {
+                        "booleanValue": true
+                      },
+                      "healthy": {
+                        "booleanValue": true
+                      },
+                      "observed_at": {
+                        "integerValue": "1791288010"
+                      },
+                      "source_observed_at": {
+                        "integerValue": "1791287980"
+                      },
+                      "source_expires_at": {
+                        "integerValue": "1791288100"
+                      }
+                    }
+                  }
+                },
+                "example-site.monitor.telemetry": {
+                  "mapValue": {
+                    "fields": {
+                      "available": {
+                        "booleanValue": true
+                      },
+                      "healthy": {
+                        "booleanValue": true
+                      },
+                      "observed_at": {
+                        "integerValue": "1791287980"
+                      },
+                      "source_observed_at": {
+                        "integerValue": "1791287780"
+                      },
+                      "source_expires_at": {
+                        "integerValue": "1791288080"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "expected_ready": false
+    },
+    {
+      "name": "partial",
+      "document": {
+        "version": 2,
+        "site": "example-site",
+        "observed_at": 1791287980,
+        "received_at": "2026-10-06T12:00:00Z",
+        "uptime_seconds": 120,
+        "root_free_percent": 42,
+        "check_revision": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "checks": {
+          "example-site.router.samples": {
+            "available": true,
+            "healthy": true,
+            "observed_at": 1791287980,
+            "source_observed_at": 1791287600,
+            "source_expires_at": 1791288200
+          },
+          "example-site.monitor.telemetry": {
+            "available": true,
+            "healthy": true,
+            "observed_at": 1791287980,
+            "source_observed_at": 1791287780,
+            "source_expires_at": 1791288080
+          }
+        }
+      },
+      "firestore_document": {
+        "name": "projects/example-project/databases/(default)/documents/siteHeartbeats/example-site",
+        "fields": {
+          "version": {
+            "integerValue": "2"
+          },
+          "site": {
+            "stringValue": "example-site"
+          },
+          "observed_at": {
+            "integerValue": "1791287980"
+          },
+          "received_at": {
+            "timestampValue": "2026-10-06T12:00:00Z"
+          },
+          "uptime_seconds": {
+            "integerValue": "120"
+          },
+          "root_free_percent": {
+            "integerValue": "42"
+          },
+          "check_revision": {
+            "stringValue": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          },
+          "checks": {
+            "mapValue": {
+              "fields": {
+                "example-site.router.samples": {
+                  "mapValue": {
+                    "fields": {
+                      "available": {
+                        "booleanValue": true
+                      },
+                      "healthy": {
+                        "booleanValue": true
+                      },
+                      "observed_at": {
+                        "integerValue": "1791287980"
+                      },
+                      "source_observed_at": {
+                        "integerValue": "1791287600"
+                      },
+                      "source_expires_at": {
+                        "integerValue": "1791288200"
+                      }
+                    }
+                  }
+                },
+                "example-site.monitor.telemetry": {
+                  "mapValue": {
+                    "fields": {
+                      "available": {
+                        "booleanValue": true
+                      },
+                      "healthy": {
+                        "booleanValue": true
+                      },
+                      "observed_at": {
+                        "integerValue": "1791287980"
+                      },
+                      "source_observed_at": {
+                        "integerValue": "1791287780"
+                      },
+                      "source_expires_at": {
+                        "integerValue": "1791288080"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "expected_ready": false
+    },
+    {
+      "name": "unavailable",
+      "document": {
+        "version": 2,
+        "site": "example-site",
+        "observed_at": 1791287980,
+        "received_at": "2026-10-06T12:00:00Z",
+        "uptime_seconds": 120,
+        "root_free_percent": 42,
+        "check_revision": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "checks": {
+          "example-site.router.samples": {
+            "available": true,
+            "healthy": true,
+            "observed_at": 1791287980,
+            "source_observed_at": 1791287600,
+            "source_expires_at": 1791288200
+          },
+          "example-site.monitor.alerts": {
+            "available": false,
+            "healthy": null,
+            "observed_at": null,
+            "source_observed_at": null,
+            "source_expires_at": null
+          },
+          "example-site.monitor.telemetry": {
+            "available": true,
+            "healthy": true,
+            "observed_at": 1791287980,
+            "source_observed_at": 1791287780,
+            "source_expires_at": 1791288080
+          }
+        }
+      },
+      "firestore_document": {
+        "name": "projects/example-project/databases/(default)/documents/siteHeartbeats/example-site",
+        "fields": {
+          "version": {
+            "integerValue": "2"
+          },
+          "site": {
+            "stringValue": "example-site"
+          },
+          "observed_at": {
+            "integerValue": "1791287980"
+          },
+          "received_at": {
+            "timestampValue": "2026-10-06T12:00:00Z"
+          },
+          "uptime_seconds": {
+            "integerValue": "120"
+          },
+          "root_free_percent": {
+            "integerValue": "42"
+          },
+          "check_revision": {
+            "stringValue": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          },
+          "checks": {
+            "mapValue": {
+              "fields": {
+                "example-site.router.samples": {
+                  "mapValue": {
+                    "fields": {
+                      "available": {
+                        "booleanValue": true
+                      },
+                      "healthy": {
+                        "booleanValue": true
+                      },
+                      "observed_at": {
+                        "integerValue": "1791287980"
+                      },
+                      "source_observed_at": {
+                        "integerValue": "1791287600"
+                      },
+                      "source_expires_at": {
+                        "integerValue": "1791288200"
+                      }
+                    }
+                  }
+                },
+                "example-site.monitor.alerts": {
+                  "mapValue": {
+                    "fields": {
+                      "available": {
+                        "booleanValue": false
+                      },
+                      "healthy": {
+                        "nullValue": null
+                      },
+                      "observed_at": {
+                        "nullValue": null
+                      },
+                      "source_observed_at": {
+                        "nullValue": null
+                      },
+                      "source_expires_at": {
+                        "nullValue": null
+                      }
+                    }
+                  }
+                },
+                "example-site.monitor.telemetry": {
+                  "mapValue": {
+                    "fields": {
+                      "available": {
+                        "booleanValue": true
+                      },
+                      "healthy": {
+                        "booleanValue": true
+                      },
+                      "observed_at": {
+                        "integerValue": "1791287980"
+                      },
+                      "source_observed_at": {
+                        "integerValue": "1791287780"
+                      },
+                      "source_expires_at": {
+                        "integerValue": "1791288080"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "expected_ready": false
+    }
+  ]
+}

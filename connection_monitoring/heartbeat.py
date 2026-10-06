@@ -37,6 +37,7 @@ def validate_snapshot(raw, expected_site=None, expected_services=None):
 
 def firestore_value(value):
     if value is None: return {'nullValue': None}
+    if type(value) is bool: return {'booleanValue': value}
     if type(value) is str: return {'stringValue': value}
     if type(value) is int: return {'integerValue': str(value)}
     if type(value) is float: return {'doubleValue': value}
@@ -47,7 +48,10 @@ def firestore_value(value):
 def commit_body(project, collection, raw):
     if type(project) is not str or not PROJECT.fullmatch(project): raise ValueError('invalid project identifier')
     if type(collection) is not str or not COLLECTION.fullmatch(collection): raise ValueError('invalid collection identifier')
-    snapshot = validate_snapshot(raw)
+    if type(raw) is dict and type(raw.get('version')) is int and raw['version']==2:
+        from .health_report import validate_health_snapshot
+        snapshot=validate_health_snapshot(raw)
+    else:snapshot = validate_snapshot(raw)
     name = 'projects/{}/databases/(default)/documents/{}/{}'.format(project, collection, snapshot['site'])
     return {'writes': [{'update': {'name': name, 'fields': {k: firestore_value(v) for k, v in snapshot.items()}},
                         'updateTransforms': [{'fieldPath': 'received_at', 'setToServerValue': 'REQUEST_TIME'}]}]}
