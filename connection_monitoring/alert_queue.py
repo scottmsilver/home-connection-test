@@ -35,7 +35,7 @@ def selected_alert(alert):
         if parsed.scheme in ('http', 'https') and parsed.hostname and not parsed.username and not parsed.password and len(values) == 1:
             panel = values[0][6:] if values[0].startswith('panel-') else values[0]
             if re.fullmatch(r'[1-9][0-9]{0,8}', panel):
-                result['panelURL'] = parsed._replace(query=urlencode({'viewPanel': panel}), fragment='').geturl()
+                result['panelURL'] = parsed._replace(query=urlencode({'viewPanel': values[0]}), fragment='').geturl()
     except (TypeError, ValueError):
         pass
     return result

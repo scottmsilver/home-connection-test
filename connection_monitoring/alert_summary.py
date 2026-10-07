@@ -151,17 +151,20 @@ def _details(alert, facts):
 
 
 def _source_link(alert):
-    url = _string(alert.get("generatorURL"), 2048)
-    try:
-        parsed = urlsplit(url)
-    except ValueError:
-        return ""
-    if parsed.scheme not in ("http", "https") or not parsed.hostname or parsed.username or parsed.password:
-        return ""
-    escaped_url = html.escape(url, quote=True)
-    if len(escaped_url) > 700:
-        return ""
-    return f'\n\n<a href="{escaped_url}">Open in Grafana</a>'
+    for field, label in (("panelURL", "View graph in Grafana"),
+                         ("generatorURL", "View alert details in Grafana")):
+        url = _string(alert.get(field), 2048)
+        try:
+            parsed = urlsplit(url)
+        except ValueError:
+            continue
+        if parsed.scheme not in ("http", "https") or not parsed.hostname or parsed.username or parsed.password:
+            continue
+        escaped_url = html.escape(url, quote=True)
+        if len(escaped_url) > 700:
+            continue
+        return f'\n\n<a href="{escaped_url}">{label}</a>'
+    return ""
 
 
 def format_alert(alert, summarize=None, context=None):

@@ -114,6 +114,6 @@ def test_queue_discards_non_panel_references(panel):
     from connection_monitoring.alert_queue import selected_alert
     assert 'panelURL' not in selected_alert(dict(ALERT,panelURL='https://grafana.example/d/sample-dashboard?viewPanel='+panel))
 
-def test_queue_normalizes_panel_prefix():
+def test_queue_preserves_panel_prefix_for_browser_links():
     from connection_monitoring.alert_queue import selected_alert
-    assert selected_alert(dict(ALERT,panelURL='https://grafana.example/d/sample-dashboard?viewPanel=panel-2'))['panelURL']=='https://grafana.example/d/sample-dashboard?viewPanel=2'
+    assert selected_alert(dict(ALERT,panelURL='https://grafana.example/d/sample-dashboard?viewPanel=panel-2'))['panelURL']=='https://grafana.example/d/sample-dashboard?viewPanel=panel-2'

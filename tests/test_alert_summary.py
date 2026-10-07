@@ -63,7 +63,29 @@ def test_grafana_link_remains_visible_outside_truncated_details(alert, status, s
     result = summary.format_alert(alert, summarize)
     assert len(result.text) <= 4096
     assert result.text.endswith(
-        '</blockquote>\n\n<a href="https://grafana.example/alerting/grafana/example/view?orgId=1&amp;view=details">Open in Grafana</a>')
+        '</blockquote>\n\n<a href="https://grafana.example/alerting/grafana/example/view?orgId=1&amp;view=details">View alert details in Grafana</a>')
+
+
+@pytest.mark.parametrize('status', ['firing', 'resolved'])
+@pytest.mark.parametrize('summarize', [None, prose])
+def test_graph_link_survives_queue_and_takes_priority_over_alert_page(alert, status, summarize):
+    from connection_monitoring.alert_queue import selected_alert
+    alert['status'] = status
+    alert['annotations']['summary'] = '<long original facts & measurements>' * 1000
+    alert['panelURL'] = 'https://grafana.example/d/alert-graphs/graphs?orgId=1&viewPanel=panel-5&secret=discard'
+    result = summary.format_alert(selected_alert(alert), summarize)
+    assert len(result.text) <= 4096
+    assert result.text.endswith('</blockquote>\n\n<a href="https://grafana.example/d/alert-graphs/graphs?viewPanel=panel-5">View graph in Grafana</a>')
+    assert 'https://grafana.example/alert' not in result.text
+    assert 'secret=discard' not in result.text
+
+
+@pytest.mark.parametrize('url', ['javascript:evil', 'https://user:password@grafana.example/d/graph'])
+def test_invalid_graph_link_falls_back_to_alert_details(alert, url):
+    alert['panelURL'] = url
+    result = summary.format_alert(alert)
+    assert result.text.endswith('<a href="https://grafana.example/alert">View alert details in Grafana</a>')
+    assert 'javascript:' not in result.text and 'password' not in result.text
 
 def test_recovery_fallback_marks_historical_annotation(alert):
     alert['status']='resolved'
