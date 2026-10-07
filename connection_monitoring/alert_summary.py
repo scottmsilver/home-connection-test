@@ -161,7 +161,7 @@ def _source_link(alert):
     escaped_url = html.escape(url, quote=True)
     if len(escaped_url) > 700:
         return ""
-    return f'\n<a href="{escaped_url}">Full alert</a>'
+    return f'\n\n<a href="{escaped_url}">Open in Grafana</a>'
 
 
 def format_alert(alert, summarize=None, context=None):

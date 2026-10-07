@@ -53,6 +53,18 @@ def test_html_links_details_and_length(alert):
     assert '<a href="evil">' not in result.text and 'javascript:' not in result.text
     assert len(result.text)<=4096 and result.text.endswith('</blockquote>')
 
+
+@pytest.mark.parametrize('status', ['firing', 'resolved'])
+@pytest.mark.parametrize('summarize', [None, prose])
+def test_grafana_link_remains_visible_outside_truncated_details(alert, status, summarize):
+    alert['status'] = status
+    alert['annotations']['summary'] = '<long original facts & measurements>' * 1000
+    alert['generatorURL'] = 'https://grafana.example/alerting/grafana/example/view?orgId=1&view=details'
+    result = summary.format_alert(alert, summarize)
+    assert len(result.text) <= 4096
+    assert result.text.endswith(
+        '</blockquote>\n\n<a href="https://grafana.example/alerting/grafana/example/view?orgId=1&amp;view=details">Open in Grafana</a>')
+
 def test_recovery_fallback_marks_historical_annotation(alert):
     alert['status']='resolved'
     result=summary.format_alert(alert,lambda f:(_ for _ in ()).throw(TimeoutError('secret')))
