@@ -74,3 +74,10 @@ def test_cleared_warning_cannot_claim_readings_returned_without_measurement():
     assert not valid_summary(candidate,facts)
     candidate['explanation']='The warning cleared; this does not confirm that readings are now available.'
     assert valid_summary(candidate,facts)
+
+
+def test_unrelated_disclaimer_does_not_hide_a_recovery_claim():
+    facts=facts_for_model(alert('resolved'))
+    for text in ['This does not prove the connection recovered, but readings are now available.', 'This does not confirm readings returned, but readings are now available.']:
+        candidate={'status':'resolved','headline':'Starlink warning cleared','explanation':text,'what_changed':'The warning cleared.','next_step':None,'evidence_ids':['status']}
+        assert not valid_summary(candidate,facts)
