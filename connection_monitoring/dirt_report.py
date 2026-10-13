@@ -14,12 +14,14 @@ import time
 from copy import deepcopy
 from pathlib import Path
 from .alert_summary import finite_number, valid_summary
+from .alert_time import localize, DEFAULT_TIMEZONE
 
 SYSTEM_PROMPT = '''Compose original plain prose describing a DIRT drill from the supplied facts only.
 Return the requested JSON object with exactly the supplied status and evidence IDs.
 Distinguish the expected drill phase from actual observed Internet connection failures.
 Only provided checks establish restoration; clearing an alert alone never proves recovery.
 An interrupted or failed drill remains interrupted or failed after restoration checks.
+Use supplied local times only; never emit UTC, GMT, ISO timestamps or epoch numbers.
 Describe changes only against explicitly supplied previous recorded report; never invent history.
 Do not decide fault authorization or the drill verdict. Do not offer administrative advice.
 Use useful supplied anonymous connection and site names, check outcomes, elapsed time,
@@ -149,7 +151,7 @@ def format_report(event,summarize=None,previous=None):
     """Render all essential results first; omit secondary whole lines visibly."""
     event=validate_event(event)
     if previous is not None: previous=validate_event(previous)
-    source=event['facts']
+    source=localize(event['facts'])
     def lines(value,prefix=''):
         result=[]
         if type(value) is dict:
@@ -178,7 +180,7 @@ def format_report(event,summarize=None,previous=None):
     marker='\nAdditional recorded details omitted'
     # Always reserve the complete marker before model prose or secondary details.
     if len(text)+len(marker)>4096: raise ValueError('essential report facts exceed Telegram limit')
-    facts={'status':event['phase']+'/'+event['outcome'],'site':event['site'],'facts':deepcopy(source),'evidence_ids':list(source),'history_available':previous is not None,'previous':deepcopy(previous),'incident_comparable':previous is not None and previous['run_id']==event['run_id']}
+    facts={'status':event['phase']+'/'+event['outcome'],'site':event['site'],'facts':deepcopy(source),'evidence_ids':list(source),'history_available':previous is not None,'previous':localize(previous),'timezone':DEFAULT_TIMEZONE,'incident_comparable':previous is not None and previous['run_id']==event['run_id']}
     candidate=None
     if summarize:
         try:

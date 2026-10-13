@@ -10,6 +10,8 @@ import html
 import math
 import json
 import re
+import time
+from .alert_time import DEFAULT_TIMEZONE, instant, local_time, localize, duration
 from urllib.parse import urlsplit
 
 
@@ -92,12 +94,19 @@ def facts_for_model(alert, context=None):
              'incident_comparable': context.get('incident_comparable', False),
              'previous': context.get('previous'), 'transition': context.get('transition', 'first_recorded'),
              'differences': context.get('differences', {}), 'cause_confirmed': False}
-    facts['evidence_ids'] = ['status', 'subject', 'source_summary', 'timestamps', 'previous', 'transition']
+    now = context.get('now', time.time())
+    start, end = instant(alert.get('startsAt')), instant(alert.get('endsAt'))
+    finish = end if status == 'resolved' else now
+    elapsed = finish-start if start is not None and finish is not None and 0 <= start <= finish <= now else None
+    facts['timing'] = {'timezone': context.get('timezone', DEFAULT_TIMEZONE), 'as_of': local_time(now, context.get('timezone', DEFAULT_TIMEZONE)), 'started_at': start, 'ended_at': end if status == 'resolved' else None, 'duration_seconds': elapsed, 'duration': duration(elapsed), 'duration_basis': 'Grafana incident start to clear time' if status == 'resolved' else 'Grafana incident start to notification preparation'}
+    facts['incident_history'] = context.get('incident_history', {'updates': [], 'complete': False})
+    facts['related_alerts'] = context.get('related_alerts', {'updates': [], 'complete': False})
+    facts['evidence_ids'] = ['status', 'subject', 'source_summary', 'timestamps', 'previous', 'transition', 'timing', 'incident_history', 'related_alerts']
     if rule:
         facts['evidence_ids'].append('rule')
     facts['evidence_ids'] += [item['id'] for item in numeric]
     facts['evidence_ids'] += ['difference:' + key for key in facts['differences']]
-    return facts
+    return localize(facts, context.get('timezone', DEFAULT_TIMEZONE))
 
 
 FIELD_LIMITS = {'headline': 120, 'explanation': 400, 'what_changed': 250, 'next_step': 200}
@@ -113,6 +122,8 @@ def valid_summary(candidate, facts):
         if key == 'next_step' and value is None:
             continue
         if not isinstance(value, str) or not value.strip() or len(value) > limit:
+            return False
+        if re.search(r'\b(?:UTC|GMT)\b|\d{4}-\d{2}-\d{2}T\d{2}:\d{2}|[+-]00:00', value, re.IGNORECASE):
             return False
         if re.search(r'\b(?:WAN|UPS|telemetry|collector|firing|resolved|null|schema|evidence_ids)\b', value, re.IGNORECASE):
             return False
@@ -142,7 +153,7 @@ def _escaped(text, budget):
 
 
 def _details(alert, facts):
-    lines = ["Historical firing source facts" if facts["status"] == "resolved" else "Original source facts", _string(alert.get("annotations", {}).get("summary"), 12000)]
+    lines = ["Historical firing source facts" if facts["status"] == "resolved" else "Original source facts", localize(_string(alert.get("annotations", {}).get("summary"), 12000), facts["timing"]["timezone"])]
     for key in FACT_LABELS:
         if facts.get(key):
             lines.append(f"{key}: {facts[key]}")
@@ -189,6 +200,14 @@ def format_alert(alert, summarize=None, context=None):
             message += '<b>Next step:</b> ' + _escaped(candidate['next_step'], 450) + '\n\n'
     else:
         message = f"<b>{_escaped(title, 300)}</b>\n\nSummary unavailable\n\n"
+    timing = facts['timing']
+    if timing['started_at']:
+        message += '<b>Started:</b> ' + _escaped(timing['started_at'], 150) + '\n'
+    if timing['ended_at']:
+        message += '<b>Cleared:</b> ' + _escaped(timing['ended_at'], 150) + '\n'
+    if timing['duration']:
+        message += ('<b>Duration:</b> ' if facts['status']=='resolved' else '<b>Active for:</b> ') + _escaped(timing['duration'], 100) + '\n'
+    message += '\n'
     link = _source_link(alert)
     opening, closing = '<blockquote expandable>', '</blockquote>'
     budget = MAX_MESSAGE - len(message + opening + closing + link)

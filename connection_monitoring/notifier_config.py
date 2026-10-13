@@ -3,6 +3,8 @@ import math
 import os
 import re
 from pathlib import Path
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
+from .alert_time import DEFAULT_TIMEZONE
 from .config import ConfigError
 
 
@@ -68,7 +70,11 @@ def validate_renderer(renderer):
 
 
 def validate_runtime_config(config):
-    _object(config, ('secrets','delivery_database','queue_database','listen','renderer','summary','queue'), 'notifier')
+    _object(config, ('secrets','delivery_database','queue_database','listen','renderer','summary','queue') + (('timezone',) if 'timezone' in config else ()), 'notifier')
+    try:
+        ZoneInfo(config.get('timezone', DEFAULT_TIMEZONE))
+    except (ZoneInfoNotFoundError, ValueError, TypeError):
+        raise ConfigError('valid notification timezone required') from None
     _object(config['secrets'], ('telegram_token','telegram_chat_id','webhook_token','grafana_token','openrouter_key'), 'secrets')
     for name in config['secrets'].values():
         if not isinstance(name,str) or not re.fullmatch(r'[A-Z][A-Z0-9_]{0,127}',name):

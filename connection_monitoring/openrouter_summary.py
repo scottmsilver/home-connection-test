@@ -15,6 +15,15 @@ REQUEST_TIMEOUT = 5
 TOTAL_TIMEOUT = 10
 MAX_RESPONSE = 32768
 SYSTEM_PROMPT = '''Write original alert prose in everyday language from the supplied evidence only.
+Make the update easy to scan: say when this incident started in supplied local time,
+how long it has been active (or its total duration if cleared), what the condition
+means, and what changed. Use the calculated timing facts, never calculate from
+lookback windows. Never output UTC, GMT, ISO timestamps or epoch numbers. All times
+must use the supplied local timezone and daylight-saving abbreviation.
+Use incident_history for the ongoing incident and previous for the last accepted
+update. Related alerts are last-reported warnings, not fresh health checks, and
+are not proof of a shared cause. Honor history completeness/retention flags; never
+claim unseen history or imply a first-ever incident. A reminder is not a new outage.
 Return one JSON object ONLY, no Markdown fences, matching the schema. Status must match input; cite supplied evidence IDs.
 Explain the current situation, useful numbers and names, and what changed since the previous
 accepted update. If history_available is false, say there is no previous recorded update.

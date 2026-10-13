@@ -30,7 +30,7 @@ def test_evidence_privacy_types_and_previous(alert):
     alert['labels']['token']='secret'; alert['annotations']['other']='secret'
     facts=summary.facts_for_model(alert,{'previous':{'status':'firing','values':{'Condition0':0}},'transition':'continuing','differences':{'Condition0':{'before':0,'after':1,'delta':1}}})
     assert 'summary_options' not in facts and 'secret' not in str(facts)
-    assert facts['timestamps']['startsAt']==alert['startsAt']
+    assert facts['timestamps']['startsAt']=='Oct 3, 2026, 3:00 AM PDT'
     assert facts['numeric_evidence'][0]['kind']=='condition_flag'
     assert facts['numeric_evidence'][1]['value'] is None
     assert all('unit' not in item for item in facts['numeric_evidence'])

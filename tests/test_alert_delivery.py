@@ -87,6 +87,7 @@ def test_render_fixed_local_url_and_timeout():
     req, timeout = opener.requests[0]
     assert req.full_url.startswith('http://127.0.0.1:3000/render/d-solo/sample-dashboard/sample-dashboard?')
     assert 'panelId=1' in req.full_url
+    assert 'tz=America%2FLos_Angeles' in req.full_url
     assert timeout == 35
     assert req.get_header('Authorization') == 'Bearer viewer'
 
@@ -101,12 +102,12 @@ def test_transport_suppresses_secrets():
     assert 'secret' not in str(error.value)
     assert error.value.__suppress_context__
 
-def test_sqlite_keeps_only_identity_and_progress(tmp_path):
+def test_sqlite_retains_allowlisted_context_without_raw_source_text(tmp_path):
     telegram = Telegram()
     path = tmp_path / 'db'
     delivery.DeliveryService(path, telegram)(ALERT)
     assert b'Missing samples' not in path.read_bytes()
-    assert b'WAN' not in path.read_bytes()
+    assert b'WAN' in path.read_bytes()  # Retained alert identity gives related warnings meaning.
 
 def test_missing_fingerprint_does_not_merge_different_alerts(tmp_path):
     telegram = Telegram(); service = delivery.DeliveryService(tmp_path / 'db', telegram)

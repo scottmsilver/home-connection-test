@@ -87,10 +87,14 @@ def panel_from_url(url, *, dashboard, panels):
         return None
 
 
+from .alert_time import DEFAULT_TIMEZONE, localize
+
+
 class GrafanaRenderer:
-    def __init__(self, token, opener=None, *, dashboard, panels, port):
+    def __init__(self, token, opener=None, *, dashboard, panels, port, timezone=DEFAULT_TIMEZONE):
         from .notifier_config import validate_renderer
         validate_renderer(dict(dashboard=dashboard, panels=list(panels), port=port))
+        self.timezone = timezone
         self.dashboard, self.panels, self.port = dashboard, tuple(panels), port
         self.token = token
         self.opener = opener
@@ -102,7 +106,7 @@ class GrafanaRenderer:
             panel = panel_from_url(alert.get('panelURL', ''), dashboard=self.dashboard, panels=self.panels)
         if panel is None:
             return None
-        url = 'http://127.0.0.1:{}/render/d-solo/{}/{}?'.format(self.port, self.dashboard, self.dashboard) + urlencode({'orgId': '1', 'panelId': panel, 'from': 'now-6h', 'to': 'now', 'width': '1000', 'height': '500', 'tz': 'UTC'})
+        url = 'http://127.0.0.1:{}/render/d-solo/{}/{}?'.format(self.port, self.dashboard, self.dashboard) + urlencode({'orgId': '1', 'panelId': panel, 'from': 'now-6h', 'to': 'now', 'width': '1000', 'height': '500', 'tz': self.timezone})
         image = fetch(url, headers={'Authorization': 'Bearer ' + self.token}, timeout=35, limit=5 * 1024 * 1024, opener=self.opener)
         # Grafana returns a small PNG error banner on render contention.
         # Reject it so durable graph retries run without resending the text.
@@ -114,11 +118,14 @@ class GrafanaRenderer:
 
 
 class DeliveryService:
-    def __init__(self, database, telegram, render=None, summarize=None, clock=time.time):
+    def __init__(self, database, telegram, render=None, summarize=None, clock=time.time, timezone=DEFAULT_TIMEZONE):
         Path(database).parent.mkdir(parents=True, exist_ok=True)
         self.db = sqlite3.connect(str(database))
         os.chmod(database, 0o600)
+        self.timezone = timezone
         self.db.execute('PRAGMA secure_delete=ON')
+        self.db.execute('CREATE TABLE IF NOT EXISTS alert_updates (id INTEGER PRIMARY KEY, subject TEXT NOT NULL, site TEXT NOT NULL, status TEXT NOT NULL, incident_start TEXT, accepted REAL NOT NULL, facts_json TEXT NOT NULL)')
+        self.db.execute('CREATE INDEX IF NOT EXISTS alert_updates_subject ON alert_updates(subject,incident_start,accepted)')
         self.db.execute('CREATE TABLE IF NOT EXISTS history (subject TEXT PRIMARY KEY, status TEXT NOT NULL, incident_start TEXT, accepted REAL NOT NULL, values_json TEXT NOT NULL)')
         self.db.execute('CREATE TABLE IF NOT EXISTS progress (identity TEXT PRIMARY KEY, created REAL NOT NULL, message_id INTEGER, done INTEGER NOT NULL DEFAULT 0)')
         self.telegram, self.render, self.summarize, self.clock = telegram, render, summarize, clock
@@ -137,6 +144,7 @@ class DeliveryService:
                   if key in (*FACT_LABELS, '__alert_rule_uid__') and isinstance(value, str)}
         subject = hashlib.sha256(json.dumps(labels, sort_keys=True, separators=(',', ':')).encode()).hexdigest()
         self.db.execute('DELETE FROM history WHERE accepted < ?', (now - 30 * 86400,))
+        self.db.execute('DELETE FROM alert_updates WHERE accepted < ?', (now - 30 * 86400,))
         self.db.commit()
         row = self.db.execute('SELECT status,incident_start,accepted,values_json FROM history WHERE subject=?', (subject,)).fetchone()
         current = self._instant(alert.get('startsAt'))
@@ -167,6 +175,11 @@ class DeliveryService:
                             delta = value - before
                             if type(delta) is int or (type(delta) is float and math.isfinite(delta)):
                                 context['differences'][key] = {'before': before, 'after': value, 'delta': delta}
+        rows = self.db.execute('SELECT facts_json FROM alert_updates WHERE subject=? AND incident_start=? ORDER BY accepted DESC,id DESC LIMIT 21', (subject, str(current))).fetchall() if current is not None else []
+        related = self.db.execute('SELECT u.facts_json FROM alert_updates u JOIN (SELECT subject,MAX(id) AS id FROM alert_updates GROUP BY subject) latest ON u.id=latest.id WHERE u.site=? AND u.subject!=? AND u.status=? ORDER BY u.accepted DESC LIMIT 21', (labels.get('site',''),subject,'firing')).fetchall()
+        context.update(now=now, timezone=self.timezone,
+            incident_history={'updates':[json.loads(r[0]) for r in reversed(rows[:20])], 'complete':False, 'truncated':len(rows)>20, 'scope':'Up to 20 accepted updates for this incident within 30 days; pre-upgrade and pruned history may be absent.'},
+            related_alerts={'updates':[json.loads(r[0]) for r in related[:20]], 'complete':False, 'truncated':len(related)>20, 'scope':'Other last-reported active warnings at this site within retained history; not current health checks.'})
         return subject, context, replace, suppress
 
     def __call__(self, alert):
@@ -203,6 +216,12 @@ class DeliveryService:
                 self.db.execute('UPDATE progress SET message_id=?,created=? WHERE identity=?', (message_id, accepted, identity))
                 if replace_history:
                     start = alert.get('startsAt') if self._instant(alert.get('startsAt')) is not None else None
+                    from .alert_summary import facts_for_model
+                    full = facts_for_model(alert, {'now':accepted, 'timezone':self.timezone})
+                    snapshot = {key:full[key] for key in ('status','site','alertname','service','peer','wan','host','values','numeric_evidence','rule','timestamps')}
+                    snapshot['accepted_at'] = accepted
+                    self.db.execute('INSERT INTO alert_updates(subject,site,status,incident_start,accepted,facts_json) VALUES (?,?,?,?,?,?)', (subject,full['site'],alert['status'],str(self._instant(start)),accepted,json.dumps(snapshot)))
+                    self.db.execute('DELETE FROM alert_updates WHERE id IN (SELECT id FROM alert_updates ORDER BY accepted DESC,id DESC LIMIT -1 OFFSET 5000)')
                     self.db.execute('INSERT OR REPLACE INTO history VALUES (?,?,?,?,?)', (subject, alert['status'], start, accepted, json.dumps(selected_values(alert), sort_keys=True)))
                     self.db.execute('DELETE FROM history WHERE subject IN (SELECT subject FROM history ORDER BY accepted DESC,subject LIMIT -1 OFFSET 1000)')
         if row and row[1] is not None and now - row[0] >= GRAPH_RETRY_LIFETIME:

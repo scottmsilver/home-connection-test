@@ -1,4 +1,5 @@
 """Authenticated loopback Grafana webhook endpoint. No request logging."""
+from .alert_time import DEFAULT_TIMEZONE
 import hmac
 import json
 import math
@@ -97,7 +98,7 @@ def runtime_delivery(config):
     secrets = resolve_secrets(config)
     from .alert_delivery import DeliveryService, GrafanaRenderer, TelegramTransport
     from .openrouter_summary import production_summary
-    return DeliveryService(config['delivery_database'], TelegramTransport(secrets['telegram_token'], secrets['telegram_chat_id']), GrafanaRenderer(secrets['grafana_token'], **config['renderer']), production_summary(secrets['openrouter_key'], config['summary']))
+    return DeliveryService(config['delivery_database'], TelegramTransport(secrets['telegram_token'], secrets['telegram_chat_id']), GrafanaRenderer(secrets['grafana_token'], timezone=config.get('timezone', DEFAULT_TIMEZONE), **config['renderer']), production_summary(secrets['openrouter_key'], config['summary']), timezone=config.get('timezone', DEFAULT_TIMEZONE))
 
 
 def serve_runtime(listener, queue):
