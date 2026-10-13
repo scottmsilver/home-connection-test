@@ -123,6 +123,11 @@ def valid_summary(candidate, facts):
             continue
         if not isinstance(value, str) or not value.strip() or len(value) > limit:
             return False
+        if facts['status'] == 'resolved' and not facts.get('current_readings_provided'):
+            for sentence in re.split(r'[.!?;\n]', value):
+                claim = re.search(r'\breadings?\b[^.!?;\n]{0,100}\b(?:now available|no longer missing|(?:have |has )?(?:returned|resumed)|(?:are|is) (?:back|available))\b', sentence, re.IGNORECASE)
+                if claim and not re.search(r"(?:does not|doesn't|cannot|can't) (?:confirm|prove|establish)|not (?:proof|confirmation)", sentence[:claim.start()], re.IGNORECASE):
+                    return False
         if re.search(r'\b(?:UTC|GMT)\b|\d{4}-\d{2}-\d{2}T\d{2}:\d{2}|[+-]00:00', value, re.IGNORECASE):
             return False
         if re.search(r'\b(?:WAN|UPS|telemetry|collector|firing|resolved|null|schema|evidence_ids)\b', value, re.IGNORECASE):

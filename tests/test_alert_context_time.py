@@ -66,3 +66,11 @@ def test_unknown_start_does_not_merge_incident_history(tmp_path):
     assert seen[-1]['incident_comparable'] is False
     assert seen[-1]['incident_history']['updates']==[]
     assert seen[-1]['timing']['duration'] is None
+
+
+def test_cleared_warning_cannot_claim_readings_returned_without_measurement():
+    facts=facts_for_model(alert('resolved'))
+    candidate={'status':'resolved','headline':'Starlink warning cleared','explanation':'Monitoring readings for Starlink are now available after being reported as missing.','what_changed':'The missing-reading warning cleared.','next_step':None,'evidence_ids':['status']}
+    assert not valid_summary(candidate,facts)
+    candidate['explanation']='The warning cleared; this does not confirm that readings are now available.'
+    assert valid_summary(candidate,facts)
