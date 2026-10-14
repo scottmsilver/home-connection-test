@@ -94,6 +94,12 @@ def facts_for_model(alert, context=None):
              'incident_comparable': context.get('incident_comparable', False),
              'previous': context.get('previous'), 'transition': context.get('transition', 'first_recorded'),
              'differences': context.get('differences', {}), 'cause_confirmed': False}
+    previous_values = (facts['previous'] or {}).get('values') if isinstance(facts['previous'], dict) else None
+    facts['unchanged_reminder'] = bool(
+        status == 'firing' and facts['transition'] == 'continuing' and isinstance(previous_values, dict)
+        and set(values) == set(previous_values)
+        and all(isinstance(d, dict) and d.get('delta') == 0 for d in facts['differences'].values())
+    )
     now = context.get('now', time.time())
     start, end = instant(alert.get('startsAt')), instant(alert.get('endsAt'))
     finish = end if status == 'resolved' else now
@@ -196,16 +202,19 @@ def format_alert(alert, summarize=None, context=None):
     site = facts['site'] or 'Unknown site'
     status = 'Cleared' if facts['status'] == 'resolved' else 'Warning'
     title = f"{site} · {status}"
+    timing = facts['timing']
     if candidate:
         headline = re.sub(r'^' + status + r'\s*:\s*', '', candidate['headline'], flags=re.IGNORECASE)
         message = f"<b>{_escaped(title + ': ' + headline, 450)}</b>\n\n"
         message += _escaped(candidate['explanation'], 850) + '\n\n'
         message += '<b>What changed:</b> ' + _escaped(candidate['what_changed'], 600) + '\n\n'
-        if candidate.get('next_step'):
+        if candidate.get('next_step') and not facts.get('unchanged_reminder'):
             message += '<b>Next step:</b> ' + _escaped(candidate['next_step'], 450) + '\n\n'
+    elif facts.get('unchanged_reminder'):
+        active_text = f"Still active ({timing['duration']})" if timing['duration'] else "Still active"
+        message = f"<b>{_escaped(title, 300)}</b>\n\n{_escaped(active_text, 200)} — Summary unavailable\n\n"
     else:
         message = f"<b>{_escaped(title, 300)}</b>\n\nSummary unavailable\n\n"
-    timing = facts['timing']
     if timing['started_at']:
         message += '<b>Started:</b> ' + _escaped(timing['started_at'], 150) + '\n'
     if timing['ended_at']:

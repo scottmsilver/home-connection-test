@@ -153,3 +153,17 @@ def test_natural_recovery_headline_and_real_measurements_remain_valid(alert):
     facts=summary.facts_for_model(alert)
     candidate=dict(prose(facts),headline='ExampleLink test warning cleared',what_changed='Loss fell from 10% to 0%.')
     assert summary.valid_summary(candidate,facts)
+
+
+def test_unchanged_continuing_reminder_is_short_and_tracks_duration(alert):
+    ctx={'previous':{'status':'firing','values':{'Condition0':1,'A':None}},'transition':'continuing',
+         'differences':{'Condition0':{'before':1,'after':1,'delta':0}},'now':1791036000.0}
+    facts=summary.facts_for_model(alert,ctx)
+    assert facts['unchanged_reminder'] is True
+    rendered=summary.format_alert(alert,lambda f:dict(prose(f),next_step='Check cables'),ctx)
+    assert rendered.used_llm
+    assert 'Next step:' not in rendered.text
+    assert 'Active for:' in rendered.text
+    fallback=summary.format_alert(alert,None,ctx)
+    assert 'Still active (' in fallback.text and 'Summary unavailable' in fallback.text
+
