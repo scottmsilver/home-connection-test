@@ -354,10 +354,15 @@ def restore(site, wan, run):
                 marker.unlink()
             if saved_helper is not None:
                 helper.unlink()
+            timer = SITES[site]["timer_prefix"] + run + ".timer"
             stopped = command(
-                ["systemctl", "stop", SITES[site]["timer_prefix"] + run + ".timer"], False
+                ["systemctl", "stop", timer], False
             )
-            if stopped.returncode:
+            if stopped.returncode and not (
+                stopped.returncode == 5
+                and timer_property(timer, "Unit", "LoadState") == "not-found"
+                and timer_property(timer, "Unit", "ActiveState") == "inactive"
+            ):
                 raise ValueError("Recovery timer cancellation uncertain")
         except BaseException:
             # Never re-arm or extend the timer. Preserve its original standalone

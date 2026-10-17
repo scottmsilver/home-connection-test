@@ -787,6 +787,25 @@ def test_timer_stop_failure_retains_recovery_and_never_reports_cleanup(router_ha
     assert (m.STATE / ("a"*32+".py")).read_bytes() == original
 
 
+def test_repeated_restore_succeeds_after_transient_timer_unloaded(router_harness, monkeypatch):
+    import json, subprocess
+    m, log, rules, cmd, invoke = router_harness
+    invoke("arm"); invoke("inject")
+    invoke("restore")
+    def unloaded_timer(args, check=True):
+        if args[:2] == ["systemctl", "stop"]:
+            return subprocess.CompletedProcess(args, 5, "", "Unit not loaded.")
+        if args[0] == "busctl" and args[-1] in ("LoadState", "ActiveState"):
+            val = "not-found" if args[-1] == "LoadState" else "inactive"
+            return subprocess.CompletedProcess(args, 0, json.dumps({"type": "s", "data": val}), "")
+        return cmd(args, check)
+    monkeypatch.setattr(m, "command", unloaded_timer)
+    invoke("restore")
+    assert rules == {"iptables": [], "ip6tables": []}
+    assert not (m.STATE / "active.json").exists()
+    assert not (m.STATE / ("a" * 32 + ".py")).exists()
+
+
 @pytest.mark.parametrize('mutation', ['missing','inactive','expired','mismatched'])
 def test_inject_never_mutates_without_matching_recovery(router_harness, monkeypatch, mutation):
     import json, subprocess
