@@ -215,7 +215,8 @@ def test_router_failure_restores_and_cannot_pass(monkeypatch):
         lambda stage, data: events.append((stage, data)),
         poll=0,
     )
-    assert calls == ["probe", "arm", "inject", "restore"]
+    # A failed inject is settled by read-only status, never by resending inject.
+    assert calls == ["probe", "arm", "inject", "status", "restore"]
     assert events[-1][1]["checks"]["cleanup"] is True
     assert events[-1][1]["passed"] is False
 
@@ -1029,6 +1030,8 @@ def test_operator_paths_send_executable_configured_router_source(
         return {"baseline": True}
 
     monkeypatch.setattr(m, "ssh", fake)
+    # Every mutation fails by design here; don't spend the real restore retry window.
+    monkeypatch.setattr(m, "RESTORE_SECONDS", 0)
     if preflight:
         m.main(
             ["--site", "third-site", "--wan", "uplink-b", "--preflight"], config=CONFIG
@@ -1170,7 +1173,7 @@ def test_before_arm_runs_after_baseline_and_before_arm_and_inject(monkeypatch):
     monkeypatch.setattr(m, "ssh", ssh)
     assert not m.run("third-site", "uplink-b", "a" * 32, lambda *args: None,
                      before_arm=lambda: order.append("guard"))
-    assert order == ["probe", "observe", "guard", "arm", "inject", "restore"]
+    assert order == ["probe", "observe", "guard", "arm", "inject", "status", "restore"]
 
 
 def test_unhealthy_baseline_does_not_call_before_arm(monkeypatch):
@@ -1192,3 +1195,154 @@ def test_before_inject_rejection_restores_armed_timer_without_inject(monkeypatch
     def reject():raise HealthRejected('expired frozen health')
     assert dirt.run('third-site','uplink-b','a'*32,lambda *args:None,before_inject=reject) is False
     assert actions==['probe','arm','restore']
+
+
+class FakeTime:
+    """Monotonic clock for engine loops: every sleep or failed call moves time."""
+
+    def __init__(self):
+        import time as real
+
+        self.now = 1000.0
+        self.time = real.time
+
+    def monotonic(self):
+        return self.now
+
+    def sleep(self, seconds):
+        self.now += max(seconds, 15)
+
+
+def primary_harness(monkeypatch, *, lost=(), lost_inject=False, fault_after_inject=True,
+                    fail_cost=10, alert_fires=True, recovers=True, vanish=None, call_cost=0):
+    """A primary-WAN fault cuts the runner's own path; `lost` names failing calls."""
+    import time
+    from types import SimpleNamespace
+
+    m = load("dirt")
+    clock = FakeTime()
+    monkeypatch.setattr(m, "time", SimpleNamespace(monotonic=clock.monotonic, sleep=clock.sleep, time=time.time))
+    phase = ["baseline"]
+    calls = []
+    remaining = dict(lost)
+    normal = {"uplink-a": {"ready": True, "active": True}, "uplink-b": {"ready": True, "active": False}}
+    failover = {"uplink-a": {"ready": False, "active": False}, "uplink-b": {"ready": True, "active": True}}
+
+    def fake(site, role, source, args=()):
+        key = ("monitor" if role == "monitor" else args[0]) + ":" + phase[0]
+        calls.append(key)
+        clock.now += call_cost
+        if vanish is not None and phase[0] == "fault" and clock.now >= vanish:
+            phase[0] = "vanished"
+            remaining["monitor:vanished"] = 10**6
+            key = ("monitor" if role == "monitor" else args[0]) + ":" + phase[0]
+        if remaining.get(key, 0) > 0:
+            remaining[key] -= 1
+            clock.now += fail_cost
+            raise ValueError("transport evidence unavailable")
+        if role == "monitor":
+            firing = phase[0] == "fault" and alert_fires
+            return {
+                "internet": True,
+                "collector_active": True,
+                "alert": {"state": "firing" if firing or (phase[0] == "recovery" and not recovers) else "inactive", "health": "ok"},
+                "delivery_history": {"status": "firing" if firing else "resolved", "accepted": time.time() + 1},
+            }
+        action = args[0]
+        if action == "inject":
+            if fault_after_inject:
+                phase[0] = "fault"
+            if lost_inject:
+                clock.now += 10
+                raise ValueError("transport evidence unavailable")
+        if action == "restore":
+            phase[0] = "recovery"
+        return {"fault_present": phase[0] == "fault", "wans": failover if phase[0] == "fault" else normal, "cleanup": True}
+
+    monkeypatch.setattr(m, "ssh", fake)
+    events = []
+    passed = m.run("third-site", "uplink-a", "a" * 32, lambda stage, data: events.append((stage, data)), poll=0)
+    return passed, calls, events, clock
+
+
+def test_lost_inject_reply_is_confirmed_by_status_and_never_resent(monkeypatch):
+    passed, calls, events, _ = primary_harness(
+        monkeypatch, lost_inject=True, lost={"status:fault": 3, "monitor:fault": 2})
+    assert passed is True
+    assert [c for c in calls if c.startswith("inject")] == ["inject:baseline"]
+    assert [d for s, d in events if s == "injected"] == [{"injected": True, "confirmed_by_status": True}]
+
+
+def test_lost_inject_reply_without_fault_fails_and_restores(monkeypatch):
+    passed, calls, events, _ = primary_harness(monkeypatch, lost_inject=True, fault_after_inject=False)
+    assert passed is False
+    assert calls.count("inject:baseline") == 1
+    assert "restore:baseline" in calls
+    assert events[-1][1]["checks"]["cleanup"] is True
+
+
+def test_primary_fault_survives_control_path_outage_and_failback(monkeypatch):
+    passed, calls, events, _ = primary_harness(monkeypatch, lost={
+        "status:fault": 4, "monitor:fault": 1, "restore:fault": 2,
+        "status:recovery": 3, "monitor:recovery": 2})
+    assert passed is True
+    assert calls.count("inject:baseline") == 1
+    assert ("fault_observation", {"unavailable": True}) in events
+    assert ("recovery_observation", {"unavailable": True}) in events
+
+
+def test_persistent_unreachability_is_bounded_and_cannot_pass(monkeypatch):
+    passed, calls, events, clock = primary_harness(monkeypatch, lost={
+        "status:fault": 10**6, "monitor:fault": 10**6, "restore:fault": 10**6})
+    assert passed is False
+    assert calls.count("inject:baseline") == 1
+    assert events[-1][1]["checks"]["cleanup"] is False
+    # Observation gives up after 300s unreachable; each restore attempt is bounded.
+    assert clock.now - 1000.0 < 300 + 2 * 300 + 120
+
+
+def test_fault_disappearance_is_caught_even_when_observation_then_fails(monkeypatch):
+    # codex review: status saying the fault is gone must not be skipped because
+    # the following observe() call failed.
+    passed, calls, events, _ = primary_harness(monkeypatch, alert_fires=False, vanish=1600)
+    assert passed is False
+    assert any(s == "error" and d.get("reason") == "Fault disappeared before test completion" for s, d in events)
+
+
+def test_worst_case_case_duration_stays_inside_case_budget(monkeypatch):
+    # codex review: every phase at its limit with 44s failing calls must still
+    # leave the coordinator time to inspect and report inside 2700s.
+    passed, calls, events, clock = primary_harness(monkeypatch, fail_cost=44, call_cost=20,
+        lost_inject=True, alert_fires=False, recovers=False,
+        lost={"status:fault": 3, "restore:fault": 3, "restore:recovery": 10**6})
+    assert passed is False
+    assert clock.now - 1000.0 <= 2700 - 60
+
+
+def test_slow_pre_arm_cannot_push_the_case_past_its_budget(monkeypatch):
+    # codex re-review: a slow before_arm must make the case decline to inject
+    # (restoring the armed timer), not start a fault it cannot finish in budget.
+    import time
+    from types import SimpleNamespace
+
+    m = load("dirt")
+    clock = FakeTime()
+    monkeypatch.setattr(m, "time", SimpleNamespace(monotonic=clock.monotonic, sleep=clock.sleep, time=time.time))
+    calls = []
+
+    def fake(site, role, source, args=()):
+        if role == "monitor":
+            return {"internet": True, "collector_active": True, "alert": {"state": "inactive", "health": "ok"}}
+        calls.append(args[0])
+        return {"baseline": True, "armed": True, "cleanup": True}
+
+    monkeypatch.setattr(m, "ssh", fake)
+    events = []
+
+    def slow_guard():
+        clock.now += 600
+
+    assert m.run("third-site", "uplink-a", "a" * 32, lambda s, d: events.append((s, d)),
+                 poll=0, before_arm=slow_guard) is False
+    assert "inject" not in calls and calls[-1] == "restore"
+    assert any(s == "error" and d.get("reason") == "Insufficient case time remains to inject" for s, d in events)

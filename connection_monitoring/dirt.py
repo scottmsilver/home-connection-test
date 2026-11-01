@@ -191,6 +191,37 @@ print(json.dumps(result))
 )
 
 
+# A primary-WAN fault can cut the runner's own path to the site until the
+# router fails over and the tunnel re-paths (tens of seconds to minutes).
+# inject is never resent: a lost reply is settled by read-only status. status,
+# observe and the idempotent restore are retried within these bounds; the
+# router-local timer armed before inject remains the independent backstop.
+CONFIRM_SECONDS = 300
+UNREACHABLE_SECONDS = 300
+RESTORE_SECONDS = 300
+# Hard bound for one case: the coordinator reserves 2700s and needs the rest
+# to inspect and report. Every phase below is capped by it; the final cleanup
+# still gets at least one attempt, and the router timer is the backstop.
+CASE_SECONDS = 2580
+CALL_SECONDS = 45  # an SSH call can run this long past any deadline check
+# Never inject unless the fault phase, restore, at least 600s of recovery
+# observation and final cleanup all still fit inside CASE_SECONDS.
+INJECT_RESERVE = 780 + RESTORE_SECONDS + 600 + RESTORE_SECONDS + 2 * CALL_SECONDS
+
+
+def retrying(call, seconds, pause, hard=None):
+    until = time.monotonic() + seconds
+    if hard is not None:
+        until = min(until, hard - CALL_SECONDS)
+    while True:
+        try:
+            return call()
+        except Exception:
+            if time.monotonic() + pause >= until:
+                raise
+            time.sleep(pause)
+
+
 def run(site, wan, run_id, emit, poll=15, *, before_arm=None, before_inject=None):
     source = router_source(site)
 
@@ -214,6 +245,7 @@ def run(site, wan, run_id, emit, poll=15, *, before_arm=None, before_inject=None
     checks = {"fault": False, "alert": False, "recovery": False, "cleanup": False}
     armed = False
     started = time.time()
+    hard = time.monotonic() + CASE_SECONDS
     primary = SITES[site]["primary"]
     try:
         baseline = router("probe")
@@ -233,14 +265,45 @@ def run(site, wan, run_id, emit, poll=15, *, before_arm=None, before_inject=None
         emit("armed", router("arm"))
         if before_inject is not None:
             before_inject()
-        emit("injected", router("inject"))
+        if hard - time.monotonic() < INJECT_RESERVE:
+            raise ValueError("Insufficient case time remains to inject")
+        # The fault phase (including settling a lost inject reply) keeps its
+        # original 780s, leaving restore, recovery and final cleanup in budget.
         deadline = time.monotonic() + 780
-        while time.monotonic() < deadline:
-            state = router("status")
-            ob = observe()
-            emit("fault_observation", {"router": state, "observation": ob})
+        try:
+            injected = router("inject")
+        except Exception:
+            state = retrying(lambda: router("status"), CONFIRM_SECONDS, poll, hard=deadline)
             if not state.get("fault_present"):
+                raise ValueError("Fault not established")
+            injected = {"injected": True, "confirmed_by_status": True}
+        emit("injected", injected)
+        reached = time.monotonic()
+
+        def unreachable(stage, reason):
+            if time.monotonic() - reached >= UNREACHABLE_SECONDS:
+                raise ValueError(reason)
+            emit(stage, {"unavailable": True})
+            time.sleep(poll)
+
+        while time.monotonic() < deadline:
+            try:
+                state = router("status")
+            except Exception:
+                unreachable("fault_observation", "Site unreachable during fault")
+                continue
+            # Checked before observe(): a known-missing fault is never masked
+            # by a monitor that happens to be unreachable.
+            if not state.get("fault_present"):
+                emit("fault_observation", {"router": state})
                 raise ValueError("Fault disappeared before test completion")
+            try:
+                ob = observe()
+            except Exception:
+                unreachable("fault_observation", "Site unreachable during fault")
+                continue
+            reached = time.monotonic()
+            emit("fault_observation", {"router": state, "observation": ob})
             healthy = fault_observed(state["wans"], wan, ob.get("internet"), primary)
             if checks["fault"] and not ob.get("internet"):
                 raise ValueError("LAN Internet failed after failover")
@@ -254,12 +317,19 @@ def run(site, wan, run_id, emit, poll=15, *, before_arm=None, before_inject=None
             if healthy and checks["alert"]:
                 break
             time.sleep(poll)
-        emit("restored", router("restore"))
+        emit("restored", retrying(lambda: router("restore"), RESTORE_SECONDS, poll,
+                                  hard=hard - RESTORE_SECONDS))
         checks["cleanup"] = True
-        deadline = time.monotonic() + 900
+        deadline = min(time.monotonic() + 900, hard - RESTORE_SECONDS - CALL_SECONDS)
+        reached = time.monotonic()
         while time.monotonic() < deadline:
-            state = router("status")
-            ob = observe()
+            try:
+                state = router("status")
+                ob = observe()
+            except Exception:
+                unreachable("recovery_observation", "Site unreachable during recovery")
+                continue
+            reached = time.monotonic()
             emit("recovery_observation", {"router": state, "observation": ob})
             delivery = ob.get("delivery_history") or {}
             recovery = (
@@ -288,7 +358,10 @@ def run(site, wan, run_id, emit, poll=15, *, before_arm=None, before_inject=None
     finally:
         if armed:
             try:
-                checks["cleanup"] = router("restore").get("cleanup") is True
+                checks["cleanup"] = (
+                    retrying(lambda: router("restore"), RESTORE_SECONDS, poll, hard=hard).get("cleanup")
+                    is True
+                )
                 emit("cleanup", {"complete": checks["cleanup"]})
             except Exception:
                 checks["cleanup"] = False
